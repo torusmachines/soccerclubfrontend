@@ -19,8 +19,7 @@ const TOKEN_KEY = 'auth_token';
 // Axios Instance Configuration
 // =======================================================
 const api = axios.create({
-  //baseURL: 'https://localhost:7001/api',
-  baseURL: 'https://soccerclubbackend.onrender.com/api',
+  baseURL: 'https://localhost:7001/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -327,6 +326,7 @@ export const createNoteApi = (payload: {
   topic: string;
   description: string;
   followUpDate?: string;
+  isVisibleToPlayer?: boolean;
 }): Promise<Note> => api.post('/Notes', payload);
 
 export const updateEmailApi = (
@@ -352,6 +352,7 @@ export const updateNoteApi = (
     topic: string;
     description: string;
     followUpDate?: string;
+    isVisibleToPlayer?: boolean;
   }>
 ): Promise<Note> =>
   api.put(`/Notes/${id}`, payload);
@@ -498,6 +499,9 @@ export interface CompanyProfilePayload {
   twitterUrl?: string;
   linkedinUrl?: string;
   youtubeUrl?: string;
+
+  // Contract Settings
+  contractExpiringMonths?: number;
 }
 
 export const fetchCompanyProfile = (): Promise<CompanyProfilePayload> =>

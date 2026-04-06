@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { useAuth } from '@/context/AuthContext';
 import { hasPermission } from '@/lib/accessPolicy';
@@ -29,10 +29,19 @@ const ClubProfile = () => {
   const { clubs, clubContacts, addClubContact, deleteClubContact, documents, addDocument, players, notes } = useAppContext();
   const { loadDocuments } = useAppContext();
   const canManageClubs = hasPermission(user?.role, 'clubs:manage');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<string>('overview');
 
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'contacts', 'notes', 'documents', 'communication'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   const club = clubs.find(c => c.clubId === id);
   if (!club) return (
@@ -92,7 +101,7 @@ const ClubProfile = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contacts.length})</TabsTrigger>

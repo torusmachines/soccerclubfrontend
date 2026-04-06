@@ -14,15 +14,19 @@ import { format, subWeeks, isAfter, isPast, addDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { isScoutRole } from '@/lib/accessPolicy';
+import { TaskDetailsModal } from '@/components/TaskDetailsModal';
+import { Task } from '@/types';
 
 
 const Dashboard = () => {
-  const { players, reviews, scouts, tasks, notes, emails } = useAppContext();
+  const { players, reviews, scouts, tasks, notes, emails, clubs } = useAppContext();
   const { user, loadUser, logout } = useAuth();
   const navigate = useNavigate();
   const [agentFilter, setAgentFilter] = useState('all');
   const isPlayerUser = (user?.role || '').toLowerCase() === 'player';
   const isScoutUser = isScoutRole(user?.role);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     void loadUser();
@@ -31,6 +35,22 @@ const Dashboard = () => {
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
+  };
+
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedTask(null);
+  };
+
+  const getEntityName = (task: Task) => {
+    if (task.playerId) return players.find(p => p.id === String(task.playerId))?.fullName;
+    if (task.clubId) return clubs.find(c => c.clubId === task.clubId)?.clubName;
+    return undefined;
   };
 
   const stats = useMemo(() => {
@@ -70,7 +90,7 @@ const Dashboard = () => {
     const emailScopedNotes = isPlayerUser
       ? notes.filter(n => n.playerId && scopedPlayerIds.has(String(n.playerId)))
       : isScoutUser && loggedInScout
-        ? notes.filter(n => String(n.createdByScoutId) === String(loggedInScout.scoutId))
+        ? notes.filter(n => String(n.createdByScoutId) === String(loggedInScout.scoutId) || (n.playerId && scopedPlayerIds.has(String(n.playerId))))
         : notes;
 
     const emailScopedEmails = isPlayerUser
@@ -153,12 +173,34 @@ const Dashboard = () => {
       .slice(0, 5);
 
     // Recent reviewed players (last 4 weeks)
-    const recentReviewedPlayerIds = new Set(filteredReviews
-      .filter(r => isAfter(new Date(r.createdAt), fourWeeksAgo))
-      .map(r => String(r.playerId))
-    );
     const recentReviewedPlayers = filteredPlayers
-      .filter(p => recentReviewedPlayerIds.has(String(p.id)));
+      .map(p => {
+        const allPlayerReviews = filteredReviews.filter(r => String(r.playerId) === String(p.id));
+        if (allPlayerReviews.length === 0) return null;
+
+        const playerReviews4Weeks = allPlayerReviews.filter(r => isAfter(new Date(r.createdAt), fourWeeksAgo));
+        if (playerReviews4Weeks.length === 0) return null;
+
+        // Get the most recent review within 4 weeks
+        const latestReview = playerReviews4Weeks.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0];
+
+        // Calculate overall rating from all player reviews (same as player profile overall average)
+        const avgRatings = getAverageRatings(allPlayerReviews);
+        const overallRating = calculateOverallAverage(avgRatings);
+
+        const scout = scouts.find(s => s.scoutId === latestReview.scoutId);
+
+        return {
+          player: p,
+          scout,
+          overallRating: overallRating.toFixed(1),
+          reviewDate: latestReview.createdAt,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => new Date(b.reviewDate).getTime() - new Date(a.reviewDate).getTime());
 
     // Upcoming review alerts (next 4 weeks by matchDate)
     const upcomingReviewAlerts = filteredReviews
@@ -225,18 +267,124 @@ const Dashboard = () => {
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Upcoming Tasks</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {stats.upcomingTasks.map(t => {
-              const entity = t.playerId === 'player'
-                ? players.find(p => p.id === t.clubId)?.fullName
-                : t.clubId;
               const overdue = isPast(new Date(t.dueDate));
+              const assignedToScout = scouts.find(s => s.scoutId === t.assignedToScoutId);
+              const assignedByScout = scouts.find(s => s.scoutId === t.assignedToScoutId); // For now, assuming assigned by is the same as assigned to
+
               return (
-                <Link key={t.taskId} to="/tasks" className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{t.title}</p>
-                    <p className="text-xs text-muted-foreground">{scouts.find(s => s.scoutId === t.assignedToScoutId)?.scoutName} · {format(new Date(t.dueDate), 'MMM d')}</p>
+                // <div key={t.taskId} className="p-3 rounded-lg hover:bg-secondary transition-colors cursor-pointer border" onClick={() => handleTaskClick(t)}>
+                //   <div className="flex items-start justify-between gap-2">
+                //     <div className="flex-1 min-w-0">
+                //       <div className="flex items-center gap-2 mb-1">
+                //         <p className="text-sm font-medium truncate">{t.title}</p>
+                //         <Badge variant="secondary" className="text-[10px] shrink-0">
+                //           {t.source}
+                //         </Badge>
+                //         {overdue && <Badge variant="destructive" className="text-[10px] shrink-0">Overdue</Badge>}
+                //       </div>
+                //       <div className="space-y-1 text-xs text-muted-foreground">
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Assigned by:</span>
+                //           <span>{assignedByScout?.scoutName || 'Unknown'}</span>
+                //         </div>
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Assigned to:</span>
+                //           <span>{assignedToScout?.scoutName || 'Unknown'}</span>
+                //         </div>
+                //         <div className="flex items-center gap-1">
+                //           <Calendar size={10} />
+                //           <span>Due: {format(new Date(t.dueDate), 'MMM d, yyyy')}</span>
+                //         </div>
+                //       </div>
+                //     </div>
+                //   </div>
+                // </div>
+
+                // <div
+                //   key={t.taskId}
+                //   className="p-3 rounded-lg border hover:bg-secondary transition-colors cursor-pointer"
+                //   onClick={() => handleTaskClick(t)}
+                // >
+                //   {/* Line 1: Title + Badges */}
+                //   <div className="flex items-center justify-between gap-2">
+                //     <p className="text-sm font-medium truncate">{t.title}</p>
+                //     <div className="flex items-center gap-1 shrink-0">
+                //       <Badge variant="secondary" className="text-[10px]">{t.source}</Badge>
+                //       {overdue && (
+                //         <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
+                //       )}
+                //     </div>
+                //   </div>
+
+                //   {/* Line 2: Assigned By + To */}
+                //   <div className="text-xs text-muted-foreground mt-1 truncate flex items-center justify-between">
+                //     <div>
+                //       <span className="font-medium">By :</span> {assignedByScout?.scoutName || 'Unknown'}{" "}
+                //       • <span className="font-medium">To:</span> {assignedToScout?.scoutName || 'Unknown'}
+                //     </div>
+
+                //     <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+                //       <span className="flex items-center gap-1">
+                //         <Calendar size={12} />
+                //         Due: {format(new Date(t.dueDate), 'MMM d, yyyy')}
+                //       </span>
+                //     </div>
+                //   </div>
+
+                // </div>
+
+                <div
+                  key={t.taskId}
+                  className="p-3 rounded-lg border hover:bg-secondary transition-colors cursor-pointer"
+                  onClick={() => handleTaskClick(t)}
+                >
+                  {/* Row 1: Title + Badges */}
+                  <div className="flex items-start sm:items-center justify-between gap-2">
+                    <p className="text-sm font-medium leading-snug line-clamp-1 sm:truncate">
+                      {t.title}
+                    </p>
+
+                    <div className="flex items-center gap-1 shrink-0 flex-wrap">
+                      <Badge variant="secondary" className="text-[11px] flex items-start">
+                        {t.source}
+                      </Badge>
+                      {overdue && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Overdue
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                  {overdue && <Badge variant="destructive" className="text-[10px] shrink-0">Overdue</Badge>}
-                </Link>
+
+                  {/* Row 2: Fully responsive details */}
+                  <div className="mt-1 text-xs text-muted-foreground flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-2">
+
+                    {/* Left side */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                      <span className="truncate max-w-full">
+                        <span className="font-medium">By:</span>{" "}
+                        {assignedByScout?.scoutName || 'Unknown'}
+                      </span>
+
+                      <span className="hidden md:inline">•</span>
+
+                      <span className="truncate max-w-full">
+                        <span className="font-medium">To:</span>{" "}
+                        {assignedToScout?.scoutName || 'Unknown'}
+                      </span>
+                    </div>
+
+                    {/* Right side */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Calendar size={12} />
+                      <span className="whitespace-nowrap">
+                        <span className="font-medium">Due:</span>{" "}
+                        {format(new Date(t.dueDate), 'MMM d, yyyy')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
               );
             })}
             {stats.upcomingTasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No upcoming tasks</p>}
@@ -248,12 +396,82 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Contract Alerts</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {[...stats.expiringPlayers, ...stats.availablePlayers].slice(0, 5).map(p => (
-              <Link key={p.id} to={`/players/${p.id}`} className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary transition-colors">
-                <span className="text-sm font-medium">{p.fullName}</span>
-                <ContractBadge status={getContractStatus(p)} />
-              </Link>
-            ))}
+            {[...stats.expiringPlayers, ...stats.availablePlayers].slice(0, 5).map(p => {
+              const scout = scouts.find(s => s.scoutId === p.agent_scout_id);
+              return (
+                // <Link key={p.id} to={`/players/${p.id}`} className="block p-3 rounded-lg hover:bg-secondary transition-colors border">
+                //   <div className="flex items-start justify-between gap-2">
+                //     <div className="flex-1 min-w-0">
+                //       <div className="flex items-center gap-2 mb-1">
+                //         <p className="text-sm font-medium truncate">{p.fullName}</p>
+                //         <ContractBadge status={getContractStatus(p)} />
+                //       </div>
+                //       <div className="space-y-1 text-xs text-muted-foreground">
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Club:</span>
+                //           <span>{p.currentClub || 'Unknown'}</span>
+                //         </div>
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Scout:</span>
+                //           <span>{scout?.scoutName || 'Unknown'}</span>
+                //         </div>
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Position:</span>
+                //           <span>{p.position}</span>
+                //         </div>
+                //         <div className="flex items-center gap-1">
+                //           <span className="font-medium">Contract ends:</span>
+                //           <span>{format(new Date(p.contractEnd), 'MMM d, yyyy')}</span>
+                //         </div>
+                //       </div>
+                //     </div>
+                //   </div>
+                // </Link>
+
+                <Link
+                  key={p.id}
+                  to={`/players/${p.id}`}
+                  className="block p-3 rounded-lg border hover:bg-secondary transition-colors"
+                >
+                  {/* Row 1: Name + Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium truncate">{p.fullName}</p>
+                    <div className="shrink-0">
+                      <ContractBadge status={getContractStatus(p)} />
+                    </div>
+                  </div>
+
+                  {/* Row 2: Fully responsive details */}
+                  <div className="mt-1 text-xs text-muted-foreground flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+
+                    {/* Left side (wraps nicely on small screens) */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="truncate">
+                        <span className="font-medium">Club:</span> {p.currentClub || 'Unknown'}
+                      </span>
+
+                      <span className="hidden sm:inline">•</span>
+
+                      <span className="truncate">
+                        <span className="font-medium">Scout:</span> {scout?.scoutName || 'Unknown'}
+                      </span>
+
+                      <span className="hidden sm:inline">•</span>
+
+                      <span>
+                        <span className="font-medium">Pos:</span> {p.position}
+                      </span>
+                    </div>
+
+                    {/* Right side (date aligned properly) */}
+                    <div className="shrink-0">
+                      <span className="font-medium">Ends:</span>{" "}
+                      {format(new Date(p.contractEnd), 'MMM d, yyyy')}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
             {stats.expiringPlayers.length === 0 && stats.availablePlayers.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">No contract alerts</p>
             )}
@@ -265,17 +483,21 @@ const Dashboard = () => {
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recent Notes</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {stats.recentNotes.map(n => {
-              const entity = n.playerId === 'player'
-                ? players.find(p => p.id === n.clubId)?.fullName
-                : n.clubId;
+              const entityName = n.playerId
+                ? players.find(p => String(p.id) === n.playerId)?.fullName || 'Unknown Player'
+                : clubs.find(c => c.clubId === n.clubId)?.clubName || 'Unknown Club';
+              const entityUrl = n.playerId
+                ? `/players/${n.playerId}?tab=notes`
+                : `/clubs/${n.clubId}?tab=notes`;
+
               return (
-                <div key={n.noteId} className="p-2 rounded-lg hover:bg-secondary transition-colors">
+                <Link key={n.noteId} to={entityUrl} className="block p-2 rounded-lg hover:bg-secondary transition-colors">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">{n.topic}</p>
-                    <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+                    <Badge variant="secondary" className="text-[11px]">{n.category}</Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{entity} · {format(new Date(n.createdAt), 'MMM d')}</p>
-                </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{entityName} · {format(new Date(n.createdAt), 'MMM d')}</p>
+                </Link>
               );
             })}
             {stats.recentNotes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No recent notes</p>}
@@ -298,16 +520,39 @@ const Dashboard = () => {
 
         {/* Recently Reviewed Players */}
         {!isPlayerUser && (
-        <Card>
-          <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recently Reviewed Players</CardTitle></CardHeader>
-          <CardContent className="space-y-2 max-h-[30vh] overflow-y-auto scrollbar-thin">
-            {stats.recentReviewedPlayers.length > 0 ? stats.recentReviewedPlayers.map(p => (
-              <Link key={p.id} to={`/players/${p.id}`} className="block text-sm hover:text-primary transition-colors truncate">
-                {p.fullName}
-              </Link>
-            )) : <p className="text-sm text-muted-foreground">No players reviewed in last 4 weeks</p>}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recently Reviewed Players</CardTitle></CardHeader>
+            <CardContent className="space-y-2 max-h-[30vh] overflow-y-auto scrollbar-thin">
+              {stats.recentReviewedPlayers.length > 0 ? stats.recentReviewedPlayers.map(item => (
+                <Link key={item.player.id} to={`/players/${item.player.id}`} className="block p-2 rounded-lg hover:bg-secondary transition-colors border">
+                  {/* Row 1: Name + Rating */}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium truncate">{item.player.fullName}</p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant="default" className="text-[11px]">
+                        {item.overallRating}/5
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  {/* Row 2: Position + Scout + Review Date */}
+                  <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="truncate">
+                      <span className="font-medium">Pos:</span> {item.player.position}
+                    </span>
+                    <span className="hidden sm:inline">•</span>
+                    <span className="truncate">
+                      <span className="font-medium">By:</span> {item.scout?.scoutName || 'Unknown'}
+                    </span>
+                    <span className="hidden sm:inline">•</span>
+                    <span className="shrink-0">
+                      {format(new Date(item.reviewDate), 'MMM d')}
+                    </span>
+                  </div>
+                </Link>
+              )) : <p className="text-sm text-muted-foreground">No players reviewed in last 4 weeks</p>}
+            </CardContent>
+          </Card>
         )}
 
         {/* Upcoming Review Alerts */}
@@ -344,22 +589,32 @@ const Dashboard = () => {
 
         {/* Scout Activity */}
         {!isPlayerUser && (
-        <Card>
-          <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Scout Activity (4 weeks)</CardTitle></CardHeader>
-          <CardContent className="space-y-3 space-y-3 max-h-[35vh] overflow-y-auto scrollbar-thin">
-            {stats.scoutActivity.map(s => (
-              <div key={s.scoutId} className="flex items-center justify-between p-2">
-                <div>
-                  <span className="text-sm font-medium">{s.scoutName}</span>
-                  <p className="text-xs text-muted-foreground">{s.roleName}</p>
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Scout Activity (4 weeks)</CardTitle></CardHeader>
+            <CardContent className="space-y-3 space-y-3 max-h-[35vh] overflow-y-auto scrollbar-thin">
+              {stats.scoutActivity.map(s => (
+                <div key={s.scoutId} className="flex items-center justify-between p-2">
+                  <div>
+                    <span className="text-sm font-medium">{s.scoutName}</span>
+                    <p className="text-xs text-muted-foreground">{s.roleName}</p>
+                  </div>
+                  <span className="text-sm font-bold text-primary">{s.reviewCount}</span>
                 </div>
-                <span className="text-sm font-bold text-primary">{s.reviewCount}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+              ))}
+            </CardContent>
+          </Card>
         )}
       </div>
+
+      {/* Task Details Modal */}
+      <TaskDetailsModal
+        task={selectedTask}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
+        createdByName={user?.name || 'Admin'}
+        getEntityName={getEntityName}
+      />
     </div>
   );
 };

@@ -1,11 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '@/context/PlayerContext';
+import { useAuth } from '@/context/AuthContext';
+import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
 import { Note, NoteCategory, NOTE_CATEGORIES, EntityType } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -28,13 +31,12 @@ const categoryColors: Record<NoteCategory, string> = {
 };
 
 export const NotesModule = ({ entityType, entityId, filterCategory, readOnly = false }: NotesModuleProps) => {
-  const { notes, addNote, scouts } = useAppContext();
+  const { notes, addNote, scouts, updateNote } = useAppContext();
+  const { user } = useAuth();
+  const isPlayerUser = isPlayerRole(user?.role);
+  const isScoutUser = isScoutRole(user?.role);
+  const isAdminUser = user?.role === 'Admin';
 
-  // const entityNotes = useMemo(() => {
-  //   let filtered = notes.filter(n => n.playerId === entityType && n.clubId === entityId);
-  //   if (filterCategory) filtered = filtered.filter(n => n.category === filterCategory);
-  //   return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  // }, [notes, entityType, entityId, filterCategory]);
   const entityNotes = useMemo(() => {
     let filtered = notes.filter(n =>
       (entityType === 'player' && Number(n.playerId) === Number(entityId)) ||
@@ -45,10 +47,14 @@ export const NotesModule = ({ entityType, entityId, filterCategory, readOnly = f
       filtered = filtered.filter(n => n.category === filterCategory);
     }
 
+    if (isPlayerUser) {
+      filtered = filtered.filter(n => (n.isVisibleToPlayer ?? false));
+    }
+
     return filtered.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [notes, entityType, entityId, filterCategory]);
+  }, [notes, entityType, entityId, filterCategory, isPlayerUser]);
 
   return (
     <div className="space-y-4">
@@ -105,9 +111,9 @@ export const NotesModule = ({ entityType, entityId, filterCategory, readOnly = f
                 <p className="text-sm text-muted-foreground">{note.description}</p>
 
                 <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                  <span>
+                  {/* <span>
                     By: {scouts.find(s => s.scoutId === note.createdByScoutId)?.scoutName || note.createdByScoutId}
-                  </span>
+                  </span> */}
 
                   {note.followUpDate && (
                     <span className="flex items-center gap-1 text-accent">
@@ -117,11 +123,42 @@ export const NotesModule = ({ entityType, entityId, filterCategory, readOnly = f
                   )}
                 </div>
 
+                {/* {(isAdminUser || isScoutUser) && (
+                  <div className="flex items-center gap-2 mt-3 text-xs">
+                    <Switch
+                      id={`visible-${note.noteId}`}
+                      checked={note.isVisibleToPlayer ?? false}
+                      onCheckedChange={async (value) => {
+                        await updateNote({ ...note, isVisibleToPlayer: value });
+                      }}
+                    />
+                    <Label htmlFor={`visible-${note.noteId}`}>Show this note to player</Label>
+                    <span>{(note.isVisibleToPlayer ?? false) ? 'Yes' : 'No'}</span>
+                  </div>
+                )} */}
+
                 {/* ✅ Buttons aligned right */}
                 {!readOnly && (
-                  <div className="flex justify-end gap-2 mt-3">
-                    <EditNoteDialog note={note} />
-                    <DeleteNoteDialog note={note} />
+
+                  <div className="flex justify-between gap-2 mt-3">
+                    {(isAdminUser || isScoutUser) && (
+                      <div className="flex items-center gap-2 mt-3 text-xs">
+                        <Switch
+                          id={`visible-${note.noteId}`}
+                          checked={note.isVisibleToPlayer ?? false}
+                          onCheckedChange={async (value) => {
+                            await updateNote({ ...note, isVisibleToPlayer: value });
+                          }}
+                         
+                        />
+                        <Label htmlFor={`visible-${note.noteId}`}>Show this note to player</Label>
+                        {/* <span>{(note.isVisibleToPlayer ?? false) ? 'Yes' : 'No'}</span> */}
+                      </div>
+                    )}
+                    <div className='flex gap-2'>
+                      <EditNoteDialog note={note} />
+                      <DeleteNoteDialog note={note} />
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -141,14 +178,24 @@ const AddNoteDialog = ({ entityType, entityId, scouts, onAdd, defaultCategory }:
   onAdd: (n: Note) => Promise<void>;   // ← was: void
   defaultCategory?: NoteCategory;
 }) => {
+  const { user } = useAuth();
+  const isPlayerUser = isPlayerRole(user?.role);
+  const isScoutUser = isScoutRole(user?.role);
+  const isAdminUser = user?.role === 'Admin';
+
   const [open, setOpen] = useState(false);
   const [topic, setTopic] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<NoteCategory>(defaultCategory || 'private');
   const [followUpDate, setFollowUpDate] = useState('');
-  const [createdBy, setCreatedBy] = useState('');
+  const [createdBy, setCreatedBy] = useState(user?.id || '');
+  const [isVisibleToPlayer, setIsVisibleToPlayer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setCreatedBy(user?.id || '');
+  }, [user]);
 
   const resetForm = () => {
     setTopic('');
@@ -156,6 +203,7 @@ const AddNoteDialog = ({ entityType, entityId, scouts, onAdd, defaultCategory }:
     setCategory(defaultCategory || 'private');
     setFollowUpDate('');
     setCreatedBy('');
+    setIsVisibleToPlayer(false);
     setErrors({});
     setSubmitting(false);
   };
@@ -189,6 +237,7 @@ const AddNoteDialog = ({ entityType, entityId, scouts, onAdd, defaultCategory }:
         description,
         category,
         followUpDate: followUpDate || undefined,
+        isVisibleToPlayer,
         createdByScoutId: createdBy,
         createdAt: new Date().toISOString(),
       });
@@ -234,6 +283,14 @@ const AddNoteDialog = ({ entityType, entityId, scouts, onAdd, defaultCategory }:
             <Label>Follow-up Date (optional)</Label>
             <Input type="date" value={followUpDate} onChange={e => setFollowUpDate(e.target.value)} />
           </div>
+
+          {(isAdminUser || isScoutUser) && (
+            <div className="flex items-center gap-2">
+              <Switch id="isVisibleToPlayer" checked={isVisibleToPlayer} onCheckedChange={setIsVisibleToPlayer} />
+              <Label htmlFor="isVisibleToPlayer">Show this note to player: {isVisibleToPlayer ? 'Yes' : 'No'}</Label>
+            </div>
+          )}
+
           {/* <div>
             <Label>Created By <span className="text-red-500">*</span></Label>
             <Select value={createdBy} onValueChange={v => { setCreatedBy(v); setErrors(prev => ({ ...prev, createdBy: '' })); }}>
@@ -261,10 +318,22 @@ const EditNoteDialog = ({ note }: { note: Note }) => {
   const [description, setDescription] = useState(note.description);
   const [category, setCategory] = useState<NoteCategory>(
     (note.category as NoteCategory) || 'private'
-  ); const [followUpDate, setFollowUpDate] = useState(note.followUpDate || '');
-  const [createdBy, setCreatedBy] = useState(note.createdByScoutId);
+  );
+  const [followUpDate, setFollowUpDate] = useState(note.followUpDate || '');
+  const [isVisibleToPlayer, setIsVisibleToPlayer] = useState(note.isVisibleToPlayer ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (open) {
+      setTopic(note.topic);
+      setDescription(note.description);
+      setCategory((note.category as NoteCategory) || 'private');
+      setFollowUpDate(note.followUpDate || '');
+      setIsVisibleToPlayer(note.isVisibleToPlayer ?? false);
+      setErrors({});
+    }
+  }, [open, note]);
 
   const handleUpdate = async () => {
     const nextErrors: Record<string, string> = {};
@@ -272,7 +341,6 @@ const EditNoteDialog = ({ note }: { note: Note }) => {
     if (!topic.trim()) nextErrors.topic = 'Required field';
     if (!category) nextErrors.category = 'Required field';
     if (!description.trim()) nextErrors.description = 'Required field';
-    if (!createdBy.trim()) nextErrors.createdBy = 'Required field';
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -287,7 +355,7 @@ const EditNoteDialog = ({ note }: { note: Note }) => {
         description,
         category,
         followUpDate: followUpDate || undefined,
-        createdByScoutId: createdBy
+        isVisibleToPlayer,
       });
 
       setOpen(false);
@@ -347,6 +415,11 @@ const EditNoteDialog = ({ note }: { note: Note }) => {
               value={followUpDate}
               onChange={e => setFollowUpDate(e.target.value)}
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Switch id="edit-visible-player" checked={isVisibleToPlayer} onCheckedChange={setIsVisibleToPlayer} />
+            <Label htmlFor="edit-visible-player">Show this note to player: {isVisibleToPlayer ? 'Yes' : 'No'}</Label>
           </div>
 
           {/* Created By */}

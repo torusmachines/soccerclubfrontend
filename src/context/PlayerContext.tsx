@@ -27,10 +27,11 @@ import {
   initialPlayers, initialReviews, scouts as mockScouts,
   initialClubs, initialClubContacts, initialNotes, initialTasks, initialEmails, initialTemplates,
 } from '@/data/mockData';
-import { differenceInDays } from 'date-fns';
+import { addMonths, differenceInDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 import { getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
+import { getContractExpiringMonths } from '@/lib/settingsUtils';
 
 interface AppContextType {
   players: Player[];
@@ -159,11 +160,14 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     setTasks(prevTasks => {
       const newTasks: Task[] = [];
 
-      // ── 1. Contract expiry (6 months = 180 days) ──────────────────────────
+      // ── 1. Contract expiry (configurable via settings)
+      const expiringMonths = getContractExpiringMonths();
+      const expiringCutoff = addMonths(now, expiringMonths);
+
       players.forEach(p => {
         const end = new Date(p.contractEnd);
         const daysLeft = differenceInDays(end, now);
-        if (daysLeft > 0 && daysLeft <= 180) {
+        if (end > now && end <= expiringCutoff) {
           const exists = prevTasks.some(
             t => t.source === 'contract' && String(t.playerId) === String(p.id) && t.status === 'open'
           );
@@ -549,6 +553,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                     <td style="padding:10px; border:1px solid #e3e8ee;">${task.title}</td>
                     <td style="padding:10px; border:1px solid #e3e8ee;">${task.dueDate}</td>
                     <td style="padding:10px; border:1px solid #e3e8ee;">${task.description}</td>
+                    <td style="padding:10px; border:1px solid #e3e8ee;">
+                      <a href="${window.location.origin}/tasks?taskId=${task.taskId}" style="background:#1f4e79; color:#fff; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:12px; display:inline-block;">View Task</a>
+                    </td>
                   </tr>
                 `).join('');
 
@@ -562,6 +569,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                           <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Task</th>
                           <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Due Date</th>
                           <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Details</th>
+                          <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -825,6 +833,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             topic: n.topic,
             description: n.description,
             followUpDate: n.followUpDate || undefined,
+            isVisibleToPlayer: n.isVisibleToPlayer ?? false,
           });
 
           // ── Step 2: Only if note was saved successfully, add to state ──
@@ -904,7 +913,10 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                           <td style="padding:10px; border:1px solid #e3e8ee;">${entityName}</td>
                         </tr>
                       </table>
-                      <p style="margin:0;">${taskToNotify.description}</p>
+                      <p style="margin:0 0 16px;">${taskToNotify.description}</p>
+                      <p style="margin:0;">
+                        <a href="${window.location.origin}/tasks?taskId=${taskToNotify.taskId}" style="background:#1f4e79; color:#fff; padding:10px 20px; text-decoration:none; border-radius:4px; display:inline-block;">View Task Details</a>
+                      </p>
                     </div>
                   `;
                   await sendHtmlEmail(recipient, emailSubject, emailBody);
@@ -924,6 +936,11 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
       },
 
       updateNote: async (n: Note) => {
+        // optimistic UI update so toggle updates immediately when user clicks
+        setNotes(prev =>
+          prev.map(x => x.noteId === n.noteId ? { ...x, ...n } : x)
+        );
+
         try {
           const updated = await updateNoteApi(n.noteId, {
             playerId: n.playerId,
@@ -932,6 +949,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             topic: n.topic,
             description: n.description,
             followUpDate: n.followUpDate,
+            isVisibleToPlayer: n.isVisibleToPlayer,
           });
 
           setNotes(prev =>
@@ -941,6 +959,10 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         } catch (err) {
           console.error("Update note failed", err);
           showError("Error", "Failed to update note");
+          // roll back on failure
+          setNotes(prev =>
+            prev.map(x => x.noteId === n.noteId ? { ...x, ...n } : x)
+          );
         }
       },
 
@@ -1020,6 +1042,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                       <td style="padding:10px; border:1px solid #e3e8ee;">${created.status}</td>
                     </tr>
                   </table>
+                  <p style="margin:0 0 16px;">
+                    <a href="${window.location.origin}/tasks?taskId=${created.taskId}" style="background:#1f4e79; color:#fff; padding:10px 20px; text-decoration:none; border-radius:4px; display:inline-block;">View Task Details</a>
+                  </p>
                   <p style="margin:0;">Please review the task in the application.</p>
                 </div>
               `;

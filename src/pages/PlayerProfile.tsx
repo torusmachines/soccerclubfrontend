@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { getContractStatus, getAverageRatings, calculateOverallAverage, generateDevPlan } from '@/lib/playerUtils';
-import { RATING_CATEGORIES, Ratings, DevelopmentPlan, Player, POSITIONS, DOCUMENT_TYPES } from '@/types';
+import { NoteCategory, RATING_CATEGORIES, Ratings, DevelopmentPlan, Player, POSITIONS, DOCUMENT_TYPES } from '@/types';
 import { StarRating } from '@/components/StarRating';
 import { ContractBadge } from '@/components/ContractBadge';
 import { NotesModule } from '@/components/NotesModule';
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Plus, FileText, Brain, Calendar, User, Printer, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import jsPDF from 'jspdf';
@@ -35,7 +36,7 @@ const PlayerProfile = () => {
   const isPlayer = isPlayerRole(user?.role);
   const isAdmin = user?.role === 'Admin';
   const isScout = isScoutRole(user?.role);
-  const { players, reviews, scouts, addReview, documents, addDocument, clubs, updatePlayer, deletePlayer, loadDocuments } = useAppContext();
+  const { players, reviews, scouts, addReview, documents, addDocument, clubs, notes, updatePlayer, deletePlayer, loadDocuments } = useAppContext();
 
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [searchParams] = useSearchParams();
@@ -137,9 +138,39 @@ const PlayerProfile = () => {
   const canEditPlayer = isAdmin || (isPlayer && isOwnPlayerProfile) || isAssignedPlayer;
   const canManagePlayerCrud = isAdmin || isAssignedPlayer;
 
+  const visiblePlayerNoteCounts = useMemo(() => {
+    const counts: Record<NoteCategory, number> = {
+      private: 0,
+      medical: 0,
+      technical: 0,
+      performance: 0,
+      meeting: 0,
+    };
+
+    if (!isPlayer) return counts;
+
+    notes
+      .filter(note => String(note.playerId) === String(id) && (note.isVisibleToPlayer ?? false))
+      .forEach(note => {
+        if (note.category === 'private') counts.private += 1;
+        if (note.category === 'medical') counts.medical += 1;
+        if (note.category === 'technical') counts.technical += 1;
+        if (note.category === 'performance') counts.performance += 1;
+      });
+
+    return counts;
+  }, [notes, id, isPlayer]);
+
   useEffect(() => {
     if (searchParams.get('edit') === 'true') {
       setShouldOpenEditFromQuery(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'reviews', 'tasks', 'documents', 'notes', 'emails', 'private', 'medical', 'technical', 'performance'].includes(tabParam)) {
+      setActiveTab(tabParam);
     }
   }, [searchParams]);
 
@@ -151,10 +182,18 @@ const PlayerProfile = () => {
   }, [shouldOpenEditFromQuery, player]);
 
   useEffect(() => {
-    if (isPlayer && activeTab !== 'overview') {
+    if (!isPlayer) return;
+
+    const visibleTabs = ['overview'] as string[];
+    if (visiblePlayerNoteCounts.private > 0) visibleTabs.push('private');
+    if (visiblePlayerNoteCounts.medical > 0) visibleTabs.push('medical');
+    if (visiblePlayerNoteCounts.technical > 0) visibleTabs.push('technical');
+    if (visiblePlayerNoteCounts.performance > 0) visibleTabs.push('performance');
+
+    if (!visibleTabs.includes(activeTab)) {
       setActiveTab('overview');
     }
-  }, [isPlayer, activeTab]);
+  }, [isPlayer, activeTab, visiblePlayerNoteCounts]);
 
   if (!player) return (
     <div className="text-center py-20">
@@ -311,10 +350,10 @@ const PlayerProfile = () => {
         <TabsList className="no-print flex-wrap h-auto gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           {!isPlayer && <TabsTrigger value="reviews">Reviews ({playerReviews.length})</TabsTrigger>}
-          {!isPlayer && <TabsTrigger value="private">Private</TabsTrigger>}
-          {!isPlayer && <TabsTrigger value="medical">Medical</TabsTrigger>}
-          {!isPlayer && <TabsTrigger value="technical">Technical</TabsTrigger>}
-          {!isPlayer && <TabsTrigger value="performance">Performance</TabsTrigger>}
+          {( !isPlayer || visiblePlayerNoteCounts.private > 0 ) && <TabsTrigger value="private">Private</TabsTrigger>}
+          {( !isPlayer || visiblePlayerNoteCounts.medical > 0 ) && <TabsTrigger value="medical">Medical</TabsTrigger>}
+          {( !isPlayer || visiblePlayerNoteCounts.technical > 0 ) && <TabsTrigger value="technical">Technical</TabsTrigger>}
+          {( !isPlayer || visiblePlayerNoteCounts.performance > 0 ) && <TabsTrigger value="performance">Performance</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="tasks">Tasks</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="documents">Documents</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="emails">Email History</TabsTrigger>}
@@ -429,25 +468,25 @@ const PlayerProfile = () => {
           </TabsContent>
         )}
 
-        {!isPlayer && (
+        {( !isPlayer || visiblePlayerNoteCounts.private > 0 ) && (
           <TabsContent id="player-tab-private" value="private" className="mt-4">
             <NotesModule entityType="player" entityId={player.id} filterCategory="private" readOnly={!canManagePlayerCrud} />
           </TabsContent>
         )}
 
-        {!isPlayer && (
+        {( !isPlayer || visiblePlayerNoteCounts.medical > 0 ) && (
           <TabsContent id="player-tab-medical" value="medical" className="mt-4">
             <NotesModule entityType="player" entityId={player.id} filterCategory="medical" readOnly={!canManagePlayerCrud} />
           </TabsContent>
         )}
 
-        {!isPlayer && (
+        {( !isPlayer || visiblePlayerNoteCounts.technical > 0 ) && (
           <TabsContent id="player-tab-technical" value="technical" className="mt-4">
             <NotesModule entityType="player" entityId={player.id} filterCategory="technical" readOnly={!canManagePlayerCrud} />
           </TabsContent>
         )}
 
-        {!isPlayer && (
+        {( !isPlayer || visiblePlayerNoteCounts.performance > 0 ) && (
           <TabsContent id="player-tab-performance" value="performance" className="mt-4 space-y-6">
             <NotesModule entityType="player" entityId={player.id} filterCategory="performance" readOnly={!canManagePlayerCrud} />
             {playerReviews.length > 0 && <DevPlanSection player={player} avgRatings={avgRatings} />}
@@ -538,6 +577,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
   const [club1Id, setClub1Id] = useState('');
   const [club2Id, setClub2Id] = useState('');
   const [notes, setNotes] = useState('');
+  const [isTraining, setIsTraining] = useState(false);
   const [ratings, setRatings] = useState<Ratings>({
     reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
     defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
@@ -552,6 +592,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
       setClub1Id('');
       setClub2Id('');
       setNotes('');
+      setIsTraining(false);
       setRatings({
         reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
         defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
@@ -560,6 +601,15 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
       setErrors({});
     }
   }, [open]);
+
+  // Validate club selection when training toggle changes
+  useEffect(() => {
+    if (!isTraining && club1Id && club2Id && club1Id === club2Id) {
+      setErrors(prev => ({ ...prev, club2Id: 'Same club selected. Enable Training mode or choose different clubs.' }));
+    } else {
+      setErrors(prev => ({ ...prev, club2Id: '' }));
+    }
+  }, [isTraining, club1Id, club2Id]);
 
   const updateSkillDetail = (key: string, field: string, value: string) => {
     setSkillDetails(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
@@ -571,7 +621,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
     const nextErrors: Record<string, string> = {};
 
     if (!scoutId.trim()) nextErrors.scoutId = 'Required field';
-    // if (club1Id && club2Id && club1Id === club2Id) nextErrors.club2Id = 'Club 2 must be different from Club 1';
+    // Club validation now handled by useEffect when training toggle changes
     // matchDate validation intentionally disabled - handled elsewhere
     // if (!matchDate.trim()) nextErrors.matchDate = 'Required field';
     // club1/club2 validations intentionally disabled to allow empty values
@@ -609,7 +659,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
         createdAt: new Date().toISOString(),
       });
       setOpen(false);
-      setScoutId(''); setMatchDate(''); setClub1Id(''); setClub2Id(''); setNotes('');
+      setScoutId(''); setMatchDate(''); setClub1Id(''); setClub2Id(''); setNotes(''); setIsTraining(false);
       setRatings({
         reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
         defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
@@ -644,13 +694,25 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
             {/* {errors.matchDate && <p className="text-xs text-destructive mt-1">{errors.matchDate}</p>} */}
           </div>
 
+          <div className="flex items-center space-x-2">
+            <Switch id="training-mode" checked={isTraining} onCheckedChange={setIsTraining} />
+            <Label htmlFor="training-mode">Training Review</Label>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Club 1</Label>
               <Select value={club1Id} onValueChange={value => { setClub1Id(value); setErrors(prev => ({ ...prev, club1Id: '' })); }}>
                 <SelectTrigger><SelectValue placeholder="Select club" /></SelectTrigger>
-                {/* <SelectContent>{clubs.filter(c => c.clubId !== club2Id).map(c => <SelectItem key={c.clubId} value={c.clubId}>{c.clubName}</SelectItem>)}</SelectContent> */}
-                <SelectContent>{clubs.map(c => <SelectItem key={c.clubId} value={c.clubId}>{c.clubName}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {clubs
+                    .filter(c => isTraining || c.clubId !== club2Id)
+                    .map(c => (
+                      <SelectItem key={c.clubId} value={c.clubId}>
+                        {c.clubName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
               </Select>
               {errors.club1Id && <p className="text-xs text-destructive mt-1">{errors.club1Id}</p>}
             </div>
@@ -658,10 +720,17 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
               <Label>Club 2</Label>
               <Select value={club2Id} onValueChange={value => { setClub2Id(value); setErrors(prev => ({ ...prev, club2Id: '' })); }}>
                 <SelectTrigger><SelectValue placeholder="Select club" /></SelectTrigger>
-                {/* <SelectContent>{clubs.filter(c => c.clubId !== club1Id).map(c => <SelectItem key={c.clubId} value={c.clubId}>{c.clubName}</SelectItem>)}</SelectContent> */}
-                <SelectContent>{clubs.map(c => <SelectItem key={c.clubId} value={c.clubId}>{c.clubName}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {clubs
+                    .filter(c => isTraining || c.clubId !== club1Id)
+                    .map(c => (
+                      <SelectItem key={c.clubId} value={c.clubId}>
+                        {c.clubName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
               </Select>
-              {/* {errors.club2Id && <p className="text-xs text-destructive mt-1">{errors.club2Id}</p>} */}
+              {errors.club2Id && <p className="text-xs text-destructive mt-1">{errors.club2Id}</p>}
             </div>
           </div>
 

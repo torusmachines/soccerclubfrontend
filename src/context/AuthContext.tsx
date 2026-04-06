@@ -26,8 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const TOKEN_KEY = 'auth_token';
-// const API_BASE = 'https://localhost:7001/api';
-const API_BASE = 'https://soccerclubbackend.onrender.com/api';
+const API_BASE = 'https://localhost:7001/api';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 

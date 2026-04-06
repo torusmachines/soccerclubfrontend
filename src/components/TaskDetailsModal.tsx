@@ -108,7 +108,7 @@ export const TaskDetailsModal = ({
                             </div>
 
                             <div>
-                                <h3 className="text-sm font-semibold text-muted-foreground mb-2">Assigned To</h3>
+                                <h3 className="text-sm font-semibold text-muted-foreground mb-2">Assigned By</h3>
                                 <p className="text-sm">{assignedScoutName}</p>
                             </div>
                         </div>

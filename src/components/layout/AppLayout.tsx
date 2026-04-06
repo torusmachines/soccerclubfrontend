@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { hasPermission, type Permission } from '@/lib/accessPolicy';
 import { ThemeSelector } from '@/components/ThemeSelector';
 import { applyTheme, getSavedTheme } from '@/lib/themes';
+import { getContractExpiringMonths, setContractExpiringMonths } from '@/lib/settingsUtils';
 import logoDark from '@/assets/logo-dark.jpeg';
 import logoLight from '@/assets/logo-light.jpeg';
 import { fetchCompanyProfile } from '@/services/apiService';
@@ -40,8 +41,14 @@ export const AppLayout = () => {
     fetchCompanyProfile().then((res) => {
       setCompanyName(res.companyName || '');
       setCompanyLogo(res.logoUrl || null);
+      if (typeof res.contractExpiringMonths === 'number' && res.contractExpiringMonths > 0) {
+        setContractExpiringMonths(res.contractExpiringMonths);
+      } else {
+        setContractExpiringMonths(getContractExpiringMonths());
+      }
     }).catch(() => {
       // ignore
+      setContractExpiringMonths(getContractExpiringMonths());
     });
   }, []);
 

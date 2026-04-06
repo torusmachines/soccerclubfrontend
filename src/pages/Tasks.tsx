@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
 import { TaskDetailsModal } from '@/components/TaskDetailsModal';
+import { useSearchParams } from 'react-router-dom';
 
 const sourceColors: Record<string, string> = {
   contract: 'bg-orange-100 text-orange-800',
@@ -34,6 +35,7 @@ const Tasks = () => {
   const [view, setView] = useState<'all' | 'upcoming'>('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const filtered = useMemo(() => {
     const currentUserEmail = (user?.email || '').trim().toLowerCase();
@@ -93,7 +95,23 @@ const Tasks = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedTask(null);
+    // Remove taskId from URL when modal closes
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.delete('taskId');
+    setSearchParams(newSearchParams);
   };
+
+  // Check for taskId in URL params and open modal
+  useEffect(() => {
+    const taskId = searchParams.get('taskId');
+    if (taskId && tasks.length > 0) {
+      const task = tasks.find(t => t.taskId === taskId);
+      if (task) {
+        setSelectedTask(task);
+        setIsModalOpen(true);
+      }
+    }
+  }, [searchParams, tasks]);
 
   return (
     <div className="space-y-6 animate-fade-in">

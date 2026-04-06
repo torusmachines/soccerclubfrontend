@@ -1,5 +1,6 @@
 import { Player, Review, Ratings, ContractStatus, DevelopmentPlan, DevelopmentGoal, MatchCriteria, RATING_CATEGORIES } from '@/types';
-import { differenceInMonths } from 'date-fns';
+import { addMonths, differenceInDays } from 'date-fns';
+import { getContractExpiringMonths } from '@/lib/settingsUtils';
 
 type RatingKey =
   | "passing"
@@ -32,7 +33,6 @@ const ratingKeys: RatingKey[] = [
 // }
 
 
-// Instead of differenceInMonths, compare with a date + 6 months window:
 export function getContractStatus(player: Player): ContractStatus {
   const now = new Date();
   const end = new Date(player.contractEnd);
@@ -40,12 +40,10 @@ export function getContractStatus(player: Player): ContractStatus {
   // If already expired
   if (end < now) return 'Available';
 
-  // Create date after 6 months from today
-  const sixMonthsLater = new Date();
-  sixMonthsLater.setMonth(now.getMonth() + 6);
+  const monthsThreshold = getContractExpiringMonths();
+  const thresholdDate = addMonths(now, monthsThreshold);
 
-  // If contract ends within next 6 months
-  if (end <= sixMonthsLater) return 'Expiring Soon';
+  if (end <= thresholdDate) return 'Expiring Soon';
 
   return 'Active';
 }

@@ -192,6 +192,7 @@ export interface Note {
   followUpDate?: string;
   createdByScoutId: string;
   createdAt: string;
+  isVisibleToPlayer?: boolean;
 }
 
 // Task types

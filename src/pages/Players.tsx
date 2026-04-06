@@ -24,6 +24,7 @@ const Players = () => {
   const isScout = isScoutRole(user?.role);
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('all');
+  const [scoutFilter, setScoutFilter] = useState('all');
 
   const visiblePlayers = players;
 
@@ -48,9 +49,22 @@ const Players = () => {
   }, [filtered, isScout, ownScoutId]);
 
   const otherPlayers = useMemo(() => {
-    if (!isScout || !ownScoutId) return filtered;
-    return filtered.filter(p => String(p.agent_scout_id || '') !== String(ownScoutId));
-  }, [filtered, isScout, ownScoutId]);
+    if (!isScout || !ownScoutId) {
+      // Admin/Player: scout filter applies to all players
+      if (scoutFilter === 'all') return filtered;
+      return filtered.filter(p => String(p.agent_scout_id || '') === String(scoutFilter));
+    }
+
+    // Scout view: myPlayers are already separated, scout filter applies to Other Players
+    if (scoutFilter === 'all') {
+      return filtered.filter(p => String(p.agent_scout_id || '') !== String(ownScoutId));
+    }
+
+    return filtered.filter(p =>
+      String(p.agent_scout_id || '') === String(scoutFilter) &&
+      String(p.agent_scout_id || '') !== String(ownScoutId)
+    );
+  }, [filtered, isScout, ownScoutId, scoutFilter]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -69,6 +83,13 @@ const Players = () => {
           <SelectContent>
             <SelectItem value="all">All Positions</SelectItem>
             {POSITIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={scoutFilter} onValueChange={setScoutFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Scouts</SelectItem>
+            {scouts.map(s => <SelectItem key={s.scoutId} value={String(s.scoutId)}>{s.scoutName}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -125,8 +146,17 @@ const Players = () => {
       )}
 
       <div className="mt-6">
-        <h2 className="text-lg font-semibold">Other Players</h2>
-        <p className="text-xs text-muted-foreground mb-3">All remaining players</p>
+        {isScout ? (
+          <>
+            <h2 className="text-lg font-semibold">Other Players</h2>
+            <p className="text-xs text-muted-foreground mb-3">All remaining players</p>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground mb-3">
+            {/* Filter by name · Showing {otherPlayers.length} players */}
+              Showing {otherPlayers.length} players
+          </p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {otherPlayers.map(player => {
             const playerReviews = reviews.filter(r => String(r.playerId) === String(player.id));

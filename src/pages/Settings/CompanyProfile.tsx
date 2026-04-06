@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { fetchCompanyProfile, updateCompanyProfile, uploadCompanyLogoApi } from '@/services/apiService';
 import { ThemeSelector } from '@/components/ThemeSelector';
 import { THEMES, ThemeKey, applyTheme } from '@/lib/themes';
+import { getContractExpiringMonths, setContractExpiringMonths as saveContractExpiringMonths } from '@/lib/settingsUtils';
 
 const CompanyProfile = () => {
   const navigate = useNavigate();
@@ -44,6 +45,9 @@ const CompanyProfile = () => {
   // Organization Details
   const [organizationType, setOrganizationType] = useState('');
   const [sportType, setSportType] = useState('');
+
+  // Contract Settings
+  const [contractExpiringMonths, setContractExpiringMonths] = useState(6);
 
   // Social Media
   const [facebookUrl, setFacebookUrl] = useState('');
@@ -79,8 +83,10 @@ const CompanyProfile = () => {
       setTwitterUrl(res.twitterUrl || '');
       setLinkedinUrl(res.linkedinUrl || '');
       setYoutubeUrl(res.youtubeUrl || '');
+      setContractExpiringMonths(res.contractExpiringMonths ?? getContractExpiringMonths());
     }).catch(() => {
       // ignore
+      setContractExpiringMonths(getContractExpiringMonths());
     }).finally(() => setLoading(false));
   }, []);
 
@@ -119,12 +125,14 @@ const CompanyProfile = () => {
         postalCode,
         organizationType,
         sportType,
+        contractExpiringMonths,
         facebookUrl,
         instagramUrl,
         twitterUrl,
         linkedinUrl,
         youtubeUrl
       });
+      saveContractExpiringMonths(contractExpiringMonths);
     } catch (err) {
       console.error(err);
     } finally {
@@ -323,6 +331,18 @@ const CompanyProfile = () => {
                   value={foundedYear}
                   onChange={e => setFoundedYear(e.target.value)}
                 />
+              </div>
+
+              <div>
+                <Label>Contract Expiring Soon (months)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={36}
+                  value={contractExpiringMonths}
+                  onChange={e => setContractExpiringMonths(Number(e.target.value) || 1)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Players with contract end in this many months are marked Expiring Soon and will generate auto contract tasks.</p>
               </div>
 
               <div>
