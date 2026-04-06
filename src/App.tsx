@@ -61,7 +61,7 @@ function DataLoader({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col items-center justify-center h-screen gap-4 bg-background">
         <p className="text-destructive font-medium">❌ {errorMsg}</p>
         <p className="text-muted-foreground text-xs">
-          Make sure https://localhost:7001/api is running
+          Make sure https://soccerclubbackend.onrender.com/api is running
         </p>
         <button
           onClick={() => { setStatus("loading"); loadMockData().then(() => setStatus("ready")).catch((err) => { setErrorMsg(err?.message || "Failed to connect to API"); setStatus("error"); }); }}

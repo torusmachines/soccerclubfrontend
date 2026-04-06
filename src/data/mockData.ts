@@ -130,7 +130,7 @@ export const loadMockData = async (): Promise<void> => {
   // initialTemplates.push(...templatesData.map(mapTemplate));
   initialTemplates.push(...templatesData);
 
-  console.log('mockData loaded from https://localhost:7001/api:', {
+  console.log('mockData loaded from https://soccerclubbackend.onrender.com/api:', {
     scouts: scouts.length,
     clubs: initialClubs.length,
     players: initialPlayers.length,

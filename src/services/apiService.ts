@@ -1,6 +1,6 @@
 // src/services/apiService.ts
 // ─────────────────────────────────────────────
-// Central Axios instance pointed at https://localhost:7001/api
+// Central Axios instance pointed at https://soccerclubbackend.onrender.com/api
 // All API calls return typed data directly (interceptor unwraps .data)
 // ─────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ const TOKEN_KEY = 'auth_token';
 // Axios Instance Configuration
 // =======================================================
 const api = axios.create({
-  baseURL: 'https://localhost:7001/api',
+  baseURL: 'https://soccerclubbackend.onrender.com/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
