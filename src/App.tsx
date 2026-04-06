@@ -1,29 +1,29 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PlayerProvider } from "@/context/PlayerContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { AdminRoute } from "@/components/AdminRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Players = lazy(() => import("./pages/Players"));
-const PlayerProfile = lazy(() => import("./pages/PlayerProfile"));
-const MyProfileRedirect = lazy(() => import("./pages/MyProfileRedirect"));
-const Clubs = lazy(() => import("./pages/Clubs"));
-const ClubProfile = lazy(() => import("./pages/ClubProfile"));
-const Scouts = lazy(() => import("./pages/Scouts"));
-const Tasks = lazy(() => import("./pages/Tasks"));
-const Templates = lazy(() => import("./pages/Templates"));
-const MatchingEngine = lazy(() => import("./pages/MatchingEngine"));
-const CompanyProfile = lazy(() => import("./pages/Settings/CompanyProfile"));
-const Login = lazy(() => import("./pages/Login"));
-const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
-const Unauthorized = lazy(() => import("./pages/Unauthorized"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+import Dashboard from "./pages/Dashboard";
+import Players from "./pages/Players";
+import PlayerProfile from "./pages/PlayerProfile";
+import MyProfileRedirect from "./pages/MyProfileRedirect";
+import Clubs from "./pages/Clubs";
+import ClubProfile from "./pages/ClubProfile";
+import Scouts from "./pages/Scouts";
+import Tasks from "./pages/Tasks";
+import Templates from "./pages/Templates";
+import MatchingEngine from "./pages/MatchingEngine";
+import CompanyProfile from "./pages/Settings/CompanyProfile";
+import Login from "./pages/Login";
+import AcceptInvite from "./pages/AcceptInvite";
+import Unauthorized from "./pages/Unauthorized";
+import NotFound from "./pages/NotFound";
 import { loadMockData } from "@/data/mockData";
 
 const queryClient = new QueryClient();
@@ -91,82 +91,75 @@ function RouterContent() {
   }
 
   return (
-    <Suspense fallback={
-      <div className="flex flex-col items-center justify-center h-screen gap-3 bg-background">
-        <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
-        <p className="text-muted-foreground text-sm">Loading page...</p>
-      </div>
-    }>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/accept-invite" element={<AcceptInvite />} />
-        <Route path="/unauthorized" element={<Unauthorized />} />
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
 
-        {/* Protected routes — DataLoader only runs for authenticated users */}
+      {/* Protected routes — DataLoader only runs for authenticated users */}
+      <Route
+        path="/"
+        element={
+          <PrivateRoute>
+            <DataLoader>
+              <AppLayout />
+            </DataLoader>
+          </PrivateRoute>
+        }
+      >
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route
-          path="/"
+          path="players"
           element={
-            <PrivateRoute>
-              <DataLoader>
-                <AppLayout />
-              </DataLoader>
-            </PrivateRoute>
+            <AdminRoute allowedRoles={["Admin", "Player", "Scout"]}>
+              <Players />
+            </AdminRoute>
           }
-        >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route
-            path="players"
-            element={
-              <AdminRoute allowedRoles={["Admin", "Player", "Scout"]}>
-                <Players />
-              </AdminRoute>
-            }
-          />
-          <Route path="players/:id" element={<PlayerProfile />} />
-          <Route path="my-profile" element={<MyProfileRedirect />} />
-          <Route path="clubs" element={<Clubs />} />
-          <Route path="clubs/:id" element={<ClubProfile />} />
-          <Route
-            path="scouts"
-            element={
-              <AdminRoute allowedRoles={["Admin", "Player", "Scout"]}>
-                <Scouts />
-              </AdminRoute>
-            }
-          />
-          <Route path="tasks" element={<Tasks />} />
-          <Route
-            path="templates"
-            element={
-              <AdminRoute>
-                <Templates />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="matching"
-            element={
-              <AdminRoute allowedRoles={["Admin", "Scout"]}>
-                <MatchingEngine />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="settings/company-profile"
-            element={
-              <AdminRoute>
-                <CompanyProfile />
-              </AdminRoute>
-            }
-          />
-        </Route>
+        />
+        <Route path="players/:id" element={<PlayerProfile />} />
+        <Route path="my-profile" element={<MyProfileRedirect />} />
+        <Route path="clubs" element={<Clubs />} />
+        <Route path="clubs/:id" element={<ClubProfile />} />
+        <Route
+          path="scouts"
+          element={
+            <AdminRoute allowedRoles={["Admin", "Player", "Scout"]}>
+              <Scouts />
+            </AdminRoute>
+          }
+        />
+        <Route path="tasks" element={<Tasks />} />
+        <Route
+          path="templates"
+          element={
+            <AdminRoute>
+              <Templates />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="matching"
+          element={
+            <AdminRoute allowedRoles={["Admin", "Scout"]}>
+              <MatchingEngine />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="settings/company-profile"
+          element={
+            <AdminRoute>
+              <CompanyProfile />
+            </AdminRoute>
+          }
+        />
+      </Route>
 
-        {/* 404 */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Suspense>
+      {/* 404 */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }
 
@@ -175,7 +168,7 @@ function RouterContent() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <BrowserRouter>
+      <HashRouter>
         <AuthProvider>
           <PlayerProvider>
             <Toaster />
@@ -183,7 +176,7 @@ const App = () => (
             <RouterContent />
           </PlayerProvider>
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
