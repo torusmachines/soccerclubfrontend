@@ -89,7 +89,7 @@ export const loadMockData = async (): Promise<void> => {
     clubContactsData,
     playersData,
     reviewsData,
-    notesData,
+    //notesData,
     tasksData,
     emailsData,
     templatesData,
@@ -99,7 +99,7 @@ export const loadMockData = async (): Promise<void> => {
     fetchClubContacts(),
     fetchPlayers(),
     fetchReviews(),
-    fetchNotes(),
+    //fetchNotes(),
     fetchTasks(),
     fetchEmails(),
     fetchTemplates(),
@@ -122,7 +122,7 @@ export const loadMockData = async (): Promise<void> => {
     }
   });
   // initialNotes.push(...notesData.map(mapNote));
-  initialNotes.push(...notesData);
+  //initialNotes.push(...notesData);
   // initialTasks.push(...tasksData.map(mapTask));
   initialTasks.push(...tasksData);
   // initialEmails.push(...emailsData.map(mapEmail));
