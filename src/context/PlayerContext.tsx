@@ -306,7 +306,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadScouts = async () => {
       try {
-        const data = await fetchScouts();
+        const data = []//await fetchScouts();
         setScouts(data);
       } catch (err) {
         console.error("Failed to load scouts", err);
