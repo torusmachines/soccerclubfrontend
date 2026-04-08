@@ -1,6 +1,6 @@
 // src/services/apiService.ts
 // ─────────────────────────────────────────────
-// Central Axios instance pointed at https://soccerclubbackend.onrender.com/api
+// Central Axios instance pointed at https://localhost:7001/api
 // All API calls return typed data directly (interceptor unwraps .data)
 // ─────────────────────────────────────────────
 
@@ -11,6 +11,10 @@ import type {
   TaskStatus,
   TaskSource,
   PlayerDocument,
+  ContactRole,
+  PlayerPosition,
+  Sponsor,
+  CommercialContract,
 } from '@/types';
 
 const TOKEN_KEY = 'auth_token';
@@ -19,7 +23,7 @@ const TOKEN_KEY = 'auth_token';
 // Axios Instance Configuration
 // =======================================================
 const api = axios.create({
-  baseURL: 'https://soccerclubbackend.onrender.com/api',
+  baseURL: 'https://localhost:7001/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -28,11 +32,17 @@ const api = axios.create({
 // =======================================================
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
+  const headers = (config.headers as any) || {};
+
   if (token) {
-    const headers = (config.headers as any) || {};
     headers['Authorization'] = `Bearer ${token}`;
-    config.headers = headers;
   }
+
+  if (config.data instanceof FormData) {
+    delete headers['Content-Type'];
+  }
+
+  config.headers = headers;
   return config;
 });
 
@@ -67,6 +77,7 @@ api.interceptors.response.use(
 export const fetchScouts = (): Promise<Scout[]> => api.get('/Scouts');
 export const fetchClubs = (): Promise<Club[]> => api.get('/Clubs');
 export const fetchClubContacts = (): Promise<ClubContact[]> => api.get('/ClubContacts');
+export const fetchContactRoles = (): Promise<ContactRole[]> => api.get('/ContactRoles');
 export const fetchPlayers = (): Promise<Player[]> => api.get('/Players');
 export const fetchNotes = (): Promise<Note[]> => api.get('/Notes');
 export const fetchTasks = (): Promise<Task[]> => api.get('/Tasks');
@@ -74,6 +85,42 @@ export const fetchEmails = (): Promise<Email[]> => api.get('/Emails');
 export const fetchTemplates = (): Promise<Template[]> => api.get('/Templates');
 export const fetchReviews = (): Promise<Review[]> => api.get('/Reviews');
 export const fetchReviewRatings = (): Promise<Ratings[]> => api.get('/ReviewRatings');
+
+// =======================================================
+// SPONSOR APIs
+// =======================================================
+
+export const fetchSponsors = (): Promise<Sponsor[]> => api.get('/Sponsors');
+export const createSponsorApi = (payload: Omit<Sponsor, 'id' | 'createdAt' | 'updatedAt'>): Promise<Sponsor> =>
+  api.post('/Sponsors', payload);
+export const updateSponsorApi = (id: string, payload: Partial<Sponsor>): Promise<Sponsor> =>
+  api.put(`/Sponsors/${id}`, payload);
+export const deleteSponsorApi = (id: string): Promise<void> =>
+  api.delete(`/Sponsors/${id}`);
+
+// =======================================================
+// COMMERCIAL CONTRACT APIs
+// =======================================================
+
+export const fetchCommercialContracts = (): Promise<CommercialContract[]> => api.get('/CommercialContracts');
+export const fetchContractsByClub = (clubId: string): Promise<CommercialContract[]> =>
+  api.get(`/CommercialContracts/by-club/${clubId}`);
+export const fetchContractsByPlayer = (playerId: string): Promise<CommercialContract[]> =>
+  api.get(`/CommercialContracts/by-player/${playerId}`);
+export const createCommercialContractApi = (payload: Omit<CommercialContract, 'id' | 'createdAt' | 'updatedAt'>): Promise<CommercialContract> =>
+  api.post('/CommercialContracts', payload);
+export const updateCommercialContractApi = (id: string, payload: Partial<CommercialContract>): Promise<CommercialContract> =>
+  api.put(`/CommercialContracts/${id}`, payload);
+export const deleteCommercialContractApi = (id: string): Promise<void> =>
+  api.delete(`/CommercialContracts/${id}`);
+export const uploadContractDocumentApi = (id: string, files: FileList | File[]): Promise<{ documentPath: string }> => {
+  const formData = new FormData();
+  Array.from(files).forEach((file) => formData.append('files', file));
+  return api.post(`/CommercialContracts/${id}/upload-document`, formData);
+};
+
+export const deleteContractDocumentApi = (id: string, documentPath: string): Promise<{ documentPath: string }> =>
+  api.delete(`/CommercialContracts/${id}/documents`, { params: { documentPath } });
 
 
 // =======================================================
@@ -192,6 +239,27 @@ export const updateClubContactApi = (
 
 export const deleteClubContactApi = (id: string) =>
   api.delete(`/ClubContacts/${id}`);
+
+// CONTACT ROLE APIs
+// =======================================================
+
+export const createContactRoleApi = (payload: {
+  roleName: string;
+  description?: string;
+}): Promise<ContactRole> =>
+  api.post('/ContactRoles', payload);
+
+export const updateContactRoleApi = (
+  id: string,
+  payload: {
+    roleName: string;
+    description?: string;
+  }
+): Promise<ContactRole> =>
+  api.put(`/ContactRoles/${id}`, payload);
+
+export const deleteContactRoleApi = (id: string): Promise<{ message: string }> =>
+  api.delete(`/ContactRoles/${id}`);
 
 
 // =======================================================
@@ -391,6 +459,8 @@ export const createScoutApi = (payload: {
   state?: string;
   postalCode?: string;
   country?: string;
+  lockedAreas?: string;
+  isShowPlayer?: boolean;
 }): Promise<Scout> =>
   api.post('/Scouts', payload);
 
@@ -409,6 +479,8 @@ export const updateScoutApi = (
     state?: string;
     postalCode?: string;
     country?: string;
+    lockedAreas?: string;
+    isShowPlayer?: boolean;
   }>
 ): Promise<Scout> =>
   api.put(`/Scouts/${id}`, payload);
@@ -526,5 +598,32 @@ export const uploadCompanyLogoApi = async (file: File): Promise<{ logoUrl: strin
 
   return res as unknown as { logoUrl: string };
 };
+
+// =======================================================
+// PLAYER POSITION APIs
+// =======================================================
+
+export const fetchPlayerPositions = (): Promise<PlayerPosition[]> => 
+  api.get('/PlayerPositions');
+
+export const createPlayerPositionApi = (payload: {
+  positionCode: string;
+  positionName: string;
+  description?: string;
+}): Promise<PlayerPosition> =>
+  api.post('/PlayerPositions', payload);
+
+export const updatePlayerPositionApi = (
+  id: string,
+  payload: {
+    positionCode: string;
+    positionName: string;
+    description?: string;
+  }
+): Promise<PlayerPosition> =>
+  api.put(`/PlayerPositions/${id}`, payload);
+
+export const deletePlayerPositionApi = (id: string): Promise<void> =>
+  api.delete(`/PlayerPositions/${id}`);
 
 export default api;

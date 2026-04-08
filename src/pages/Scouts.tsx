@@ -1,6 +1,6 @@
 
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type MouseEvent } from 'react';
 import { useAppContext } from '@/context/PlayerContext';
 import { Scout } from '@/types';
 import { useSearchParams } from 'react-router-dom';
@@ -10,15 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Plus, Edit, Trash2, Loader2 } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Loader2, AccessibilityIcon, LockKeyholeIcon } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/context/AuthContext';
-import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
+import { isPlayerRole, isScoutRole, isAdminRole } from '@/lib/accessPolicy';
 
 const Scouts = () => {
   const { user } = useAuth();
   const isPlayer = isPlayerRole(user?.role);
   const isScout = isScoutRole(user?.role);
+  const isAdmin = isAdminRole(user?.role);
   const { scouts, addScout, updateScout, deleteScout } = useAppContext();
 
   // Find the logged-in scout's own record by email match
@@ -31,6 +32,10 @@ const Scouts = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const [shouldOpenOwnEdit, setShouldOpenOwnEdit] = useState(false);
+  const [lockOpen, setLockOpen] = useState(false);
+  const [lockingScout, setLockingScout] = useState<Scout | null>(null);
+  const [selectedLockedAreas, setSelectedLockedAreas] = useState<string[]>([]);
+  const [selectedShowAllPlayers, setSelectedShowAllPlayers] = useState(false);
 
   const filtered = useMemo(() => {
     return scouts.filter(s => {
@@ -73,14 +78,34 @@ const Scouts = () => {
     setEditOpen(true);
   };
 
+  const handleLockClick = (scout: Scout) => {
+    setLockingScout(scout);
+
+    let locked: string[] = [];
+    if (scout.lockedAreas) {
+      try {
+        const parsed = JSON.parse(scout.lockedAreas);
+        locked = Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.error('Failed to parse scout.lockedAreas', scout.scoutId, scout.lockedAreas, error);
+        locked = [];
+      }
+    }
+
+    console.log('Opening lock dialog for scout', scout.scoutId, { lockedAreas: scout.lockedAreas, parsedLockedAreas: locked });
+    setSelectedLockedAreas(locked);
+    setSelectedShowAllPlayers(scout.isShowPlayer ?? false);
+    setLockOpen(true);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Scouts</h1>
+        <h1 className="text-2xl font-bold">Coaches</h1>
         {/* Add Scout hidden for both Player and Scout roles */}
         {!isPlayer && !isScout && (
           <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus size={14} className="mr-1" /> Add Scout
+            <Plus size={14} className="mr-1" /> Add Coach
           </Button>
         )}
       </div>
@@ -88,7 +113,7 @@ const Scouts = () => {
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input 
-          placeholder="Search scouts by name, role, email or phone..." 
+          placeholder="Search coaches by name, role, email or phone..." 
           value={search} 
           onChange={e => setSearch(e.target.value)} 
           className="pl-9" 
@@ -124,8 +149,18 @@ const Scouts = () => {
                 {!isPlayer && (
                   <TableCell>
                     <div className="flex gap-2">
+                      {/* Lock button only for Admin */}
+                      {isAdmin && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleLockClick(scout)}
+                        >
+                          <LockKeyholeIcon size={14} />
+                        </Button>
+                      )}
                       {/* Scout: edit only own row; Admin: edit any */}
-                      {(!isScout || scout.scoutId === ownScoutId) && (
+                      {!isScout && (
                         <Button 
                           size="sm" 
                           variant="outline"
@@ -173,6 +208,19 @@ const Scouts = () => {
           onSubmit={updateScout}
           title="Edit Scout"
           initialScout={editingScout}
+        />
+      )}
+
+      {isAdmin && lockingScout && (
+        <LockAreasDialog
+          open={lockOpen}
+          onOpenChange={setLockOpen}
+          scout={lockingScout}
+          selectedAreas={selectedLockedAreas}
+          onSelectedAreasChange={setSelectedLockedAreas}
+          showAllPlayers={selectedShowAllPlayers}
+          onShowAllPlayersChange={setSelectedShowAllPlayers}
+          updateScout={updateScout}
         />
       )}
     </div>
@@ -263,9 +311,11 @@ const ScoutFormDialog = ({
         state: form.state?.trim() || undefined,
         postalCode: form.postalCode?.trim() || undefined,
         country: form.country || 'India',
+        lockedAreas: initialScout?.lockedAreas,
         createdAt: initialScout?.createdAt || new Date().toISOString()
       };
 
+      console.log('ScoutFormDialog payload', payload);
       await onSubmit(payload);
 
       // If adding a new scout (not editing) and email is provided, send invite
@@ -461,4 +511,134 @@ const ScoutFormDialog = ({
   );
 };
 
+const LockAreasDialog = ({
+  open,
+  onOpenChange,
+  scout,
+  selectedAreas,
+  onSelectedAreasChange,
+  showAllPlayers,
+  onShowAllPlayersChange,
+  updateScout
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  scout: Scout | null;
+  selectedAreas: string[];
+  onSelectedAreasChange: (areas: string[]) => void;
+  showAllPlayers: boolean;
+  onShowAllPlayersChange: (value: boolean) => void;
+  updateScout: (scout: Scout) => Promise<void>;
+}) => {
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const navigationItems = ['Clubs', 'Matching', 'Settings', 'Templates'];
+
+  const handleSave = async (event?: MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    if (!scout) {
+      console.warn('handleSave called without scout');
+      return;
+    }
+
+    setIsLoading(true);
+    const lockedAreasJson = JSON.stringify(selectedAreas || []);
+    console.log('Saving locked areas for scout', scout.scoutId, { selectedAreas, lockedAreasJson, showAllPlayers });
+
+    try {
+      await updateScout({
+        ...scout,
+        lockedAreas: lockedAreasJson,
+        isShowPlayer: showAllPlayers
+      });
+      toast({
+        title: 'Success',
+        description: `Locked areas updated for ${scout.scoutName}`,
+      });
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error('Failed to update locked areas', error);
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to update locked areas',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleArea = (area: string) => {
+    if (selectedAreas.includes(area)) {
+      onSelectedAreasChange(selectedAreas.filter(a => a !== area));
+    } else {
+      onSelectedAreasChange([...selectedAreas, area]);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Lock Navigation Areas for {scout?.scoutName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="showAllPlayers">Show All Players (Yes/No)</Label>
+              <p className="text-xs text-muted-foreground">Allow this scout to view all players.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="showAllPlayers" className="text-sm">
+                <input
+                  id="showAllPlayers"
+                  type="checkbox"
+                  checked={showAllPlayers}
+                  onChange={e => onShowAllPlayersChange(e.target.checked)}
+                  className="mr-2 h-4 w-4 rounded border"
+                />
+                {showAllPlayers ? 'Yes' : 'No'}
+              </Label>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Select the navigation items to lock for this coach. Locked items will be hidden from their navigation menu.
+          </p>
+          <div className="space-y-2">
+            {navigationItems.map(item => (
+              <div key={item} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id={item}
+                  checked={selectedAreas.includes(item)}
+                  onChange={() => toggleArea(item)}
+                  className="rounded"
+                />
+                <Label htmlFor={item}>{item}</Label>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2 mt-6">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Changes'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 export default Scouts;
+

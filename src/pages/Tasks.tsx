@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, Circle, Plus, Search, Calendar, Filter } from 'lucide-react';
-import { format, isPast, isFuture, addDays } from 'date-fns';
+import { format, isPast, isFuture, addDays, startOfDay } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
@@ -30,52 +30,140 @@ const Tasks = () => {
   const isScout = isScoutRole(user?.role);
   const { tasks, updateTask, addTask, players, clubs, scouts } = useAppContext();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('open');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [view, setView] = useState<'all' | 'upcoming'>('all');
+  const [upcomingDays, setUpcomingDays] = useState(15); // Default to 15 days
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // const filtered = useMemo(() => {
+  //   const currentUserEmail = (user?.email || '').trim().toLowerCase();
+
+  //   // Player: tasks for own player records
+  //   const ownPlayerIds = new Set(
+  //     players
+  //       .filter(p => (p.player_email || '').trim().toLowerCase() === currentUserEmail)
+  //       .map(p => String(p.id))
+  //   );
+
+  //   // Scout: tasks assigned to them OR tasks for their players
+  //   const loggedInScout = isScout
+  //     ? scouts.find(s => (s.email || '').trim().toLowerCase() === currentUserEmail)
+  //     : null;
+  //   const scoutPlayerIds = loggedInScout
+  //     ? new Set(players.filter(p => String(p.agent_scout_id) === String(loggedInScout.scoutId)).map(p => String(p.id)))
+  //     : new Set<string>();
+
+  //   let result = isPlayer
+  //     ? tasks.filter(t => t.playerId && ownPlayerIds.has(String(t.playerId)))
+  //     : isScout && loggedInScout
+  //       ? tasks.filter(t =>
+  //           String(t.assignedToScoutId) === String(loggedInScout.scoutId) ||
+  //           (t.playerId && scoutPlayerIds.has(String(t.playerId)))
+  //         )
+  //       : [...tasks];
+
+  //   if (view === 'upcoming') {
+  //     const today = startOfDay(new Date());
+  //     const soon = addDays(today, upcomingDays);
+  //     result = result.filter(t => {
+  //       const due = new Date(t.dueDate);
+  //       const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
+  //       return due >= today && due <= soon && matchesStatus;
+  //     });
+  //   } else {
+  //     if (statusFilter !== 'all') result = result.filter(t => t.status === statusFilter);
+  //   }
+  //   if (agentFilter !== 'all') result = result.filter(t => t.assignedToScoutId === agentFilter);
+  //   if (search) {
+  //     const s = search.toLowerCase();
+  //     result = result.filter(t => t.title.toLowerCase().includes(s) || t.description.toLowerCase().includes(s));
+  //   }
+  //   return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  // }, [tasks, players, scouts, user?.email, isPlayer, isScout, search, statusFilter, agentFilter, view]);
+
   const filtered = useMemo(() => {
     const currentUserEmail = (user?.email || '').trim().toLowerCase();
 
-    // Player: tasks for own player records
     const ownPlayerIds = new Set(
       players
         .filter(p => (p.player_email || '').trim().toLowerCase() === currentUserEmail)
         .map(p => String(p.id))
     );
 
-    // Scout: tasks assigned to them OR tasks for their players
     const loggedInScout = isScout
       ? scouts.find(s => (s.email || '').trim().toLowerCase() === currentUserEmail)
       : null;
+
     const scoutPlayerIds = loggedInScout
-      ? new Set(players.filter(p => String(p.agent_scout_id) === String(loggedInScout.scoutId)).map(p => String(p.id)))
+      ? new Set(
+        players
+          .filter(p => String(p.agent_scout_id) === String(loggedInScout.scoutId))
+          .map(p => String(p.id))
+      )
       : new Set<string>();
 
     let result = isPlayer
       ? tasks.filter(t => t.playerId && ownPlayerIds.has(String(t.playerId)))
       : isScout && loggedInScout
-        ? tasks.filter(t =>
+        ? tasks.filter(
+          t =>
             String(t.assignedToScoutId) === String(loggedInScout.scoutId) ||
             (t.playerId && scoutPlayerIds.has(String(t.playerId)))
-          )
+        )
         : [...tasks];
 
     if (view === 'upcoming') {
-      const soon = addDays(new Date(), 14);
-      result = result.filter(t => t.status === 'open' && new Date(t.dueDate) <= soon);
+      const today = startOfDay(new Date());
+      const soon = addDays(today, upcomingDays);
+
+      result = result.filter(t => {
+        const due = new Date(t.dueDate);
+        const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
+
+        return due >= today && due <= soon && matchesStatus;
+      });
+    } else {
+      if (statusFilter !== 'all') {
+        result = result.filter(t => t.status === statusFilter);
+      }
     }
-    if (statusFilter !== 'all') result = result.filter(t => t.status === statusFilter);
-    if (agentFilter !== 'all') result = result.filter(t => t.assignedToScoutId === agentFilter);
+
+    if (agentFilter !== 'all') {
+      result = result.filter(t => t.assignedToScoutId === agentFilter);
+    }
+
     if (search) {
       const s = search.toLowerCase();
-      result = result.filter(t => t.title.toLowerCase().includes(s) || t.description.toLowerCase().includes(s));
+      result = result.filter(
+        t =>
+          t.title.toLowerCase().includes(s) ||
+          t.description.toLowerCase().includes(s)
+      );
     }
-    return result.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [tasks, players, scouts, user?.email, isPlayer, isScout, search, statusFilter, agentFilter, view]);
+
+    return result.sort(
+      (a, b) =>
+        new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    );
+  }, [
+    tasks,
+    players,
+    scouts,
+    user?.email,
+    isPlayer,
+    isScout,
+    search,
+    statusFilter,
+    agentFilter,
+
+    // ✅ FIX: ADD THESE
+    view,
+    upcomingDays,
+  ]);
+
 
   const toggleStatus = (task: Task) => {
     updateTask({ ...task, status: task.status === 'open' ? 'completed' : 'open' });
@@ -140,12 +228,34 @@ const Tasks = () => {
             {scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button variant={view === 'upcoming' ? 'default' : 'outline'} size="sm" onClick={() => setView(v => v === 'upcoming' ? 'all' : 'upcoming')}>
-          <Calendar size={14} className="mr-1" /> Upcoming
-        </Button>
+        <Select value={view === 'upcoming' ? `upcoming-${upcomingDays}` : 'all'} onValueChange={(value) => {
+          if (value === 'all') {
+            setView('all');
+          } else if (value.startsWith('upcoming-')) {
+            setView('upcoming');
+            setUpcomingDays(parseInt(value.split('-')[1]));
+          }
+        }}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tasks</SelectItem>
+            <SelectItem value="upcoming-7">Upcoming (7 days)</SelectItem>
+            <SelectItem value="upcoming-15">Upcoming (15 days)</SelectItem>
+            <SelectItem value="upcoming-30">Upcoming (30 days)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <p className="text-sm text-muted-foreground">{filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
+      <p className="text-sm text-muted-foreground">
+        {view === 'upcoming'
+          ? `${filtered.length} upcoming${statusFilter !== 'all' ? ` ${statusFilter}` : ''} task${filtered.length !== 1 ? 's' : ''} in ${upcomingDays} day${upcomingDays !== 1 ? 's' : ''}`
+          : statusFilter !== 'all'
+            ? `${filtered.length} ${statusFilter} task${filtered.length !== 1 ? 's' : ''}`
+            : `${filtered.length} task${filtered.length !== 1 ? 's' : ''}`
+        }
+      </p>
 
       <div className="space-y-3">
         {filtered.map(task => {
@@ -166,7 +276,7 @@ const Tasks = () => {
                     <p className="text-xs text-muted-foreground mt-1">{task.description}</p>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1"><Calendar size={10} /> {format(new Date(task.dueDate), 'MMM d, yyyy')}</span>
-                      <span>Assigned: {scouts.find(s => s.scoutId === task.assignedToScoutId)?.scoutName || task.assignedToScoutId}</span>
+                      <span>Assigned By : {scouts.find(s => s.scoutId === task.assignedToScoutId)?.scoutName || task.assignedToScoutId}</span>
                       {getEntityName(task) && (
                         <Link to={task.playerId ? `/players/${task.playerId}` : `/clubs/${task.clubId}`}
                           className="text-primary hover:underline"
@@ -198,6 +308,11 @@ const Tasks = () => {
         assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
+        onUpdateTask={updateTask}
+        scouts={scouts}
+        players={players}
+        clubs={clubs}
+        isScout={isScout}
       />
     </div>
   );

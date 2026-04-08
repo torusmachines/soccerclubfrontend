@@ -1,27 +1,29 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Target, Menu, Building2, CheckSquare, FileText, Eye, MoreHorizontal, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, Users, Target, Menu, Building2, CheckSquare, FileText, Eye, MoreHorizontal, Settings as SettingsIcon, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { hasPermission, type Permission } from '@/lib/accessPolicy';
+import { hasPermission, type Permission, isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
 import { ThemeSelector } from '@/components/ThemeSelector';
 import { applyTheme, getSavedTheme } from '@/lib/themes';
 import { getContractExpiringMonths, setContractExpiringMonths } from '@/lib/settingsUtils';
 import logoDark from '@/assets/logo-dark.jpeg';
 import logoLight from '@/assets/logo-light.jpeg';
 import { fetchCompanyProfile } from '@/services/apiService';
+import { useAppContext } from '@/context/PlayerContext';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:view' as Permission },
   { to: '/players', label: 'Players', icon: Users, permission: 'players:view' as Permission },
   { to: '/clubs', label: 'Clubs', icon: Building2, permission: 'clubs:view' as Permission },
-  { to: '/scouts', label: 'Scouts', icon: Eye, permission: 'scouts:view' as Permission },
+  { to: '/scouts', label: 'Coaches', icon: Eye, permission: 'scouts:view' as Permission },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare, permission: 'tasks:view' as Permission },
   { to: '/templates', label: 'Templates', icon: FileText, permission: 'templates:view' as Permission },
   { to: '/matching', label: 'Matching', icon: Target, permission: 'matching:view' as Permission },
+  { to: '/commercial', label: 'Commercial', icon: DollarSign, permission: 'commercial:view' as Permission },
 ];
 
 export const AppLayout = () => {
@@ -32,6 +34,27 @@ export const AppLayout = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [companyName, setCompanyName] = useState<string>('');
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const { scouts } = useAppContext();
+
+  const isPlayer = isPlayerRole(user?.role);
+  const isScout = isScoutRole(user?.role);
+  const isRestrictedUser = isPlayer || isScout;
+
+  const currentScout = scouts.find(s => s.email?.toLowerCase() === user?.email?.toLowerCase());
+  const lockedAreas = (() => {
+    if (!isRestrictedUser || !currentScout?.lockedAreas) return [] as string[];
+
+    if (Array.isArray(currentScout.lockedAreas)) {
+      return currentScout.lockedAreas.filter(item => typeof item === 'string');
+    }
+
+    try {
+      const parsed = JSON.parse(currentScout.lockedAreas);
+      return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  })();
 
   useEffect(() => {
     applyTheme(getSavedTheme());
@@ -52,9 +75,24 @@ export const AppLayout = () => {
     });
   }, []);
 
+  // Listen for company profile updates from settings page
+  useEffect(() => {
+    const handleCompanyProfileUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { companyName: updatedName, logoUrl: updatedLogo } = customEvent.detail;
+      setCompanyName(updatedName || '');
+      setCompanyLogo(updatedLogo || null);
+    };
+
+    window.addEventListener('companyProfileUpdated', handleCompanyProfileUpdate);
+    return () => {
+      window.removeEventListener('companyProfileUpdated', handleCompanyProfileUpdate);
+    };
+  }, []);
+
   const NavContent = () => (
     <nav className="flex flex-col gap-1 p-3">
-      {navItems.filter(item => hasPermission(user?.role, item.permission)).map(item => {
+      {navItems.filter(item => hasPermission(user?.role, item.permission) && (!isRestrictedUser || !lockedAreas.includes(item.label))).map(item => {
         const active = location.pathname.startsWith(item.to);
         return (
           <Link
@@ -72,25 +110,33 @@ export const AppLayout = () => {
         );
       })}
 
-      <div className=''>
-        <button
-          onClick={() => setSettingsOpen((s) => !s)}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground w-full text-left",
-          )}
-        >
-          <SettingsIcon size={18} />
-          Settings
-        </button>
-        {settingsOpen && (
-          <div className="mt-2 px-7">
-            {/* ThemeSelector moved to Company Profile form */}
-            <div className="px-3 py-1">
-              <button onClick={() => { navigate('/settings/company-profile'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Company Profile</button>
+      {(!isRestrictedUser || !lockedAreas.includes('Settings')) && (
+        <div className=''>
+          <button
+            onClick={() => setSettingsOpen((s) => !s)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-all rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground w-full text-left",
+            )}
+          >
+            <SettingsIcon size={18} />
+            Settings
+          </button>
+          {settingsOpen && (
+            <div className="mt-2 px-7">
+              {/* ThemeSelector moved to Company Profile form */}
+              <div className="px-3 py-1">
+                <button onClick={() => { navigate('/settings/company-profile'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Company Profile</button>
+              </div>
+              <div className="px-3 py-1">
+                <button onClick={() => { navigate('/settings/manage-roles'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Manage Roles</button>
+              </div>
+              <div className="px-3 py-1">
+                <button onClick={() => { navigate('/settings/manage-positions'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Manage Positions</button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </nav>
   );
 
@@ -114,9 +160,12 @@ export const AppLayout = () => {
         <NavContent />
         <div className="mt-auto p-4 border-t border-sidebar-border">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium font-bold text-white">{user?.fullName || 'Guest'}</p>
+            <div className='flex items-center gap-2'>
+            <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Guest')}&background=random&color=fff&size=64`} alt={user?.fullName || 'Guest'} className="h-10 w-10 rounded-full object-cover" />
+             <div className='block'>
+               <p className="text-sm font-medium font-bold text-white">{user?.fullName || 'Guest'}</p>
               <p className="text-xs text-white ">{user?.role || ''}</p>
+             </div>
             </div>
             <div>
               <DropdownMenu>

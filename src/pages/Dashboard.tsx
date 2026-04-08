@@ -19,7 +19,7 @@ import { Task } from '@/types';
 
 
 const Dashboard = () => {
-  const { players, reviews, scouts, tasks, notes, emails, clubs } = useAppContext();
+  const { players, reviews, scouts, tasks, notes, emails, clubs, playerPositions } = useAppContext();
   const { user, loadUser, logout } = useAuth();
   const navigate = useNavigate();
   const [agentFilter, setAgentFilter] = useState('all');
@@ -66,11 +66,17 @@ const Dashboard = () => {
       ? scouts.find(s => (s.email || '').trim().toLowerCase() === currentUserEmail)
       : null;
 
-    // Scope players: Player → own email; Scout → assigned players; Admin → all
+    const showAllPlayers = isScoutUser && loggedInScout
+      ? loggedInScout.isShowPlayer ?? false
+      : false;
+
+    // Scope players: Player → own email; Scout → assigned players or all players if allowed; Admin → all
     const emailScopedPlayers = isPlayerUser && currentUserEmail
       ? players.filter(p => (p.player_email || '').trim().toLowerCase() === currentUserEmail)
       : isScoutUser && loggedInScout
-        ? players.filter(p => String(p.agent_scout_id) === String(loggedInScout.scoutId))
+        ? showAllPlayers
+          ? players
+          : players.filter(p => String(p.agent_scout_id) === String(loggedInScout.scoutId))
         : players;
 
     const scopedPlayerIds = new Set(emailScopedPlayers.map(p => String(p.id)));
@@ -268,8 +274,10 @@ const Dashboard = () => {
           <CardContent className="space-y-3">
             {stats.upcomingTasks.map(t => {
               const overdue = isPast(new Date(t.dueDate));
-              const assignedToScout = scouts.find(s => s.scoutId === t.assignedToScoutId);
-              const assignedByScout = scouts.find(s => s.scoutId === t.assignedToScoutId); // For now, assuming assigned by is the same as assigned to
+              const assignedByScout = scouts.find(s => s.scoutId === t.assignedToScoutId); // Assigned by scout or admin placeholder
+              const taskPlayer = t.playerId ? players.find(p => String(p.id) === String(t.playerId)) : undefined;
+              const taskClub = t.clubId ? clubs.find(c => String(c.clubId) === String(t.clubId)) : undefined;
+              const assignedToName = taskPlayer ? taskPlayer.fullName : taskClub ? taskClub.clubName : 'Unknown';
 
               return (
                 // <div key={t.taskId} className="p-3 rounded-lg hover:bg-secondary transition-colors cursor-pointer border" onClick={() => handleTaskClick(t)}>
@@ -362,15 +370,15 @@ const Dashboard = () => {
                     {/* Left side */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                       <span className="truncate max-w-full">
-                        <span className="font-medium">By:</span>{" "}
+                        <span className="font-medium">Assigned By:</span>{" "}
                         {assignedByScout?.scoutName || 'Unknown'}
                       </span>
 
                       <span className="hidden md:inline">•</span>
 
                       <span className="truncate max-w-full">
-                        <span className="font-medium">To:</span>{" "}
-                        {assignedToScout?.scoutName || 'Unknown'}
+                        <span className="font-medium">Assigned To:</span>{" "}
+                        {assignedToName}
                       </span>
                     </div>
 
@@ -398,6 +406,8 @@ const Dashboard = () => {
           <CardContent className="space-y-3">
             {[...stats.expiringPlayers, ...stats.availablePlayers].slice(0, 5).map(p => {
               const scout = scouts.find(s => s.scoutId === p.agent_scout_id);
+              const club = clubs.find(c => String(c.clubId) === String(p.currentClub));
+              const position = playerPositions.find(pos => pos.positionCode === p.position);
               return (
                 // <Link key={p.id} to={`/players/${p.id}`} className="block p-3 rounded-lg hover:bg-secondary transition-colors border">
                 //   <div className="flex items-start justify-between gap-2">
@@ -447,19 +457,19 @@ const Dashboard = () => {
                     {/* Left side (wraps nicely on small screens) */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="truncate">
-                        <span className="font-medium">Club:</span> {p.currentClub || 'Unknown'}
+                        <span className="font-medium">Club:</span> {club?.clubName || p.currentClub || 'Unknown'}
                       </span>
 
                       <span className="hidden sm:inline">•</span>
 
                       <span className="truncate">
-                        <span className="font-medium">Scout:</span> {scout?.scoutName || 'Unknown'}
+                        <span className="font-medium">Coach:</span> {scout?.scoutName || 'Unknown'}
                       </span>
 
                       <span className="hidden sm:inline">•</span>
 
                       <span>
-                        <span className="font-medium">Pos:</span> {p.position}
+                        <span className="font-medium">Position:</span> {position?.positionName || p.position}
                       </span>
                     </div>
 
@@ -538,11 +548,11 @@ const Dashboard = () => {
                   {/* Row 2: Position + Scout + Review Date */}
                   <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="truncate">
-                      <span className="font-medium">Pos:</span> {item.player.position}
+                      <span className="font-medium">Position:</span> {playerPositions.find(pos => pos.positionCode === item.player.position)?.positionName || item.player.position}
                     </span>
                     <span className="hidden sm:inline">•</span>
                     <span className="truncate">
-                      <span className="font-medium">By:</span> {item.scout?.scoutName || 'Unknown'}
+                      <span className="font-medium">Reviewed By:</span> {item.scout?.scoutName || 'Unknown'}
                     </span>
                     <span className="hidden sm:inline">•</span>
                     <span className="shrink-0">
@@ -561,11 +571,24 @@ const Dashboard = () => {
           <CardContent className="space-y-2 max-h-[30vh] overflow-y-auto scrollbar-thin">
             {stats.upcomingReviewAlerts.length > 0 ? stats.upcomingReviewAlerts.map(r => {
               const player = players.find(p => String(p.id) === String(r.playerId));
+              const scout = scouts.find(s => String(s.scoutId) === String(r.scoutId));
+              const position = playerPositions.find(p => p.positionCode === player?.position);
+              const club = clubs.find(c => String(c.clubId) === String(player?.currentClub));
+              
               return (
-                <div key={r.reviewId} className="p-2 rounded-lg bg-muted/50">
-                  <p className="text-sm font-medium">{player ? player.fullName : r.playerId}</p>
-                  <p className="text-xs text-muted-foreground">{format(new Date(r.matchDate), 'MMM d, yyyy')}</p>
-                </div>
+                <Link key={r.reviewId} to={`/players/${r.playerId}`} className="block">
+                  <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{player ? player.fullName : r.playerId}</p>
+                      <p className="text-xs text-muted-foreground">{r.matchDate ? format(new Date(r.matchDate), 'MMM d, yyyy') : 'Date TBD'}</p>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      {scout && <span><span className="font-medium">Coach : </span> {scout.scoutName}</span>}
+                      {position && <span><span className="font-medium"> • Position :</span> {position.positionName}</span>}
+                      {club && <span><span className="font-medium"> • Club : </span> {club.clubName}</span>}
+                    </div>
+                  </div>
+                </Link>
               );
             }) : <p className="text-sm text-muted-foreground">No upcoming reviews in next 4 weeks</p>}
           </CardContent>
@@ -590,7 +613,7 @@ const Dashboard = () => {
         {/* Scout Activity */}
         {!isPlayerUser && (
           <Card>
-            <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Scout Activity (4 weeks)</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Coach Activity (4 weeks)</CardTitle></CardHeader>
             <CardContent className="space-y-3 space-y-3 max-h-[35vh] overflow-y-auto scrollbar-thin">
               {stats.scoutActivity.map(s => (
                 <div key={s.scoutId} className="flex items-center justify-between p-2">
@@ -614,6 +637,10 @@ const Dashboard = () => {
         assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
+        scouts={scouts}
+        players={players}
+        clubs={clubs}
+        isScout={isScoutUser}
       />
     </div>
   );

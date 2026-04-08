@@ -8,7 +8,7 @@ import { CheckCircle, Circle, Calendar, Link as LinkIcon, Trash2 } from 'lucide-
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { isPlayerRole } from '@/lib/accessPolicy';
+import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
 import { TaskDetailsModal } from './TaskDetailsModal';
 
 interface TaskTimelineProps {
@@ -36,6 +36,7 @@ const sourceColors: Record<string, string> = {
 export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTimelineProps) => {
   const { user } = useAuth();
   const isPlayer = isPlayerRole(user?.role);
+  const isScout = isScoutRole(user?.role);
   const { tasks, updateTask, deleteTask, scouts, players, clubs } = useAppContext();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -159,6 +160,10 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
         assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
+        scouts={scouts}
+        players={players}
+        clubs={clubs}
+        isScout={isScout}
       />
     </div>
   );

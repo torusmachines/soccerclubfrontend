@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { getContractStatus, getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
-import { POSITIONS, Player } from '@/types';
+import { Player, PlayerPosition } from '@/types';
 import { inviteUserApi } from '@/services/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Search, Plus, MapPin, Loader2 } from 'lucide-react';
 
 const Players = () => {
-  const { players, reviews, addPlayer, scouts, clubs } = useAppContext();
+  const { players, reviews, addPlayer, scouts, clubs, playerPositions } = useAppContext();
   const { user } = useAuth();
   const isPlayer = isPlayerRole(user?.role);
   const isScout = isScoutRole(user?.role);
@@ -38,10 +38,12 @@ const Players = () => {
     });
   }, [visiblePlayers, search, posFilter]);
 
-  // find logged-in scout's own scoutId (match by email)
-  const ownScoutId = isScout
-    ? scouts.find(s => (s.email || '').trim().toLowerCase() === (user?.email || '').trim().toLowerCase())?.scoutId
+  // find logged-in scout's own scout record by email match
+  const ownScout = isScout
+    ? scouts.find(s => (s.email || '').trim().toLowerCase() === (user?.email || '').trim().toLowerCase())
     : undefined;
+  const ownScoutId = ownScout?.scoutId;
+  const showAllPlayers = ownScout?.isShowPlayer ?? false;
 
   const myPlayers = useMemo(() => {
     if (!isScout || !ownScoutId) return [] as typeof players;
@@ -55,6 +57,10 @@ const Players = () => {
       return filtered.filter(p => String(p.agent_scout_id || '') === String(scoutFilter));
     }
 
+    if (!showAllPlayers) {
+      return [] as typeof players;
+    }
+
     // Scout view: myPlayers are already separated, scout filter applies to Other Players
     if (scoutFilter === 'all') {
       return filtered.filter(p => String(p.agent_scout_id || '') !== String(ownScoutId));
@@ -64,13 +70,13 @@ const Players = () => {
       String(p.agent_scout_id || '') === String(scoutFilter) &&
       String(p.agent_scout_id || '') !== String(ownScoutId)
     );
-  }, [filtered, isScout, ownScoutId, scoutFilter]);
+  }, [filtered, isScout, ownScoutId, scoutFilter, showAllPlayers, players]);
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Players</h1>
-        {!isPlayer && !isScout && <AddPlayerDialog onAdd={addPlayer} scouts={scouts} clubs={clubs} />}
+        {!isPlayer && !isScout && <AddPlayerDialog onAdd={addPlayer} scouts={scouts} clubs={clubs} playerPositions={playerPositions} />}
       </div>
 
       <div className="flex gap-3 flex-wrap">
@@ -82,7 +88,7 @@ const Players = () => {
           <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Positions</SelectItem>
-            {POSITIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            {playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={scoutFilter} onValueChange={setScoutFilter}>
@@ -149,12 +155,15 @@ const Players = () => {
         {isScout ? (
           <>
             <h2 className="text-lg font-semibold">Other Players</h2>
-            <p className="text-xs text-muted-foreground mb-3">All remaining players</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              {showAllPlayers
+                ? 'All remaining players'
+                : 'Show All Players is OFF. Only assigned players are visible.'}
+            </p>
           </>
         ) : (
           <p className="text-xs text-muted-foreground mb-3">
-            {/* Filter by name · Showing {otherPlayers.length} players */}
-              Showing {otherPlayers.length} players
+            Showing {otherPlayers.length} players
           </p>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -212,11 +221,13 @@ const Players = () => {
 const AddPlayerDialog = ({
   onAdd,
   scouts,
-  clubs
+  clubs,
+  playerPositions
 }: {
   onAdd: (player: Player, imageFile?: File) => Promise<void>;
   scouts: any[];
   clubs: any[];
+  playerPositions: PlayerPosition[];
 }) => {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -483,31 +494,31 @@ const AddPlayerDialog = ({
             <Label>Position</Label>
             <Select value={form.position} onValueChange={v => update('position', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{POSITIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+              <SelectContent>{playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}</SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label>Preferred Foot <span className="text-red-500">*</span></Label>
+            <Label>Laterality <span className="text-red-500">*</span></Label>
             <Select value={form.preferredFoot} onValueChange={v => update('preferredFoot', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Left">Left</SelectItem>
                 <SelectItem value="Right">Right</SelectItem>
-                <SelectItem value="Both">Both</SelectItem>
+                <SelectItem value="Both">Ambidextrous</SelectItem>
               </SelectContent>
             </Select>
             {errors.preferredFoot ? <p className="text-xs text-destructive mt-1">{errors.preferredFoot}</p> : null}
           </div>
 
           <div>
-            <Label>Height (cm) <span className="text-red-500">*</span></Label>
+            <Label>Height <span className="text-[14px] text-gray-500">(cm)</span> <span className="text-red-500">*</span></Label>
             <Input type="number" value={form.height} onChange={e => update('height', e.target.value)} />
             {errors.height ? <p className="text-xs text-destructive mt-1">{errors.height}</p> : null}
           </div>
 
           <div>
-            <Label>Weight (kg) <span className="text-red-500">*</span></Label>
+            <Label>Weight <span className="text-[14px] text-gray-500">(kg)</span> <span className="text-red-500">*</span></Label>
             <Input type="number" value={form.weight} onChange={e => update('weight', e.target.value)} />
             {errors.weight ? <p className="text-xs text-destructive mt-1">{errors.weight}</p> : null}
           </div>

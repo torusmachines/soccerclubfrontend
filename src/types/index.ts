@@ -36,6 +36,8 @@ export interface Scout {
   state?: string;
   postalCode?: string;
   country?: string;
+  lockedAreas?: string;
+  isShowPlayer?: boolean;
   createdAt: string;
 }
 
@@ -104,6 +106,7 @@ export interface PlayerDocument {
   documentDate: string;
   fileSizeLabel: string;
   fileData?: string; // optional (only for detail view)
+  isVisibleToPlayer?: boolean;
 }
 
 export interface DevelopmentPlan {
@@ -283,8 +286,6 @@ export interface Template {
   createdAt: string;
 }
 
-export const POSITIONS = ['GK', 'CB', 'RB', 'LB', 'CDM', 'CM', 'CAM', 'RW', 'LW', 'CF', 'ST'];
-
 export const RATING_CATEGORIES: { key: string; label: string }[] = [
   { key: 'passing', label: 'Passing' },
   { key: 'shooting', label: 'Shooting' },
@@ -303,6 +304,51 @@ export const NOTE_CATEGORIES: { value: NoteCategory; label: string }[] = [
   { value: 'performance', label: 'Performance' },
   { value: 'meeting', label: 'Meeting' },
 ];
+
+export interface ContactRole {
+  roleId: string;
+  roleName: string;
+  description?: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface PlayerPosition {
+  positionId: string;
+  positionCode: string;
+  positionName: string;
+  description?: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface Sponsor {
+  id: string;
+  companyName: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommercialContract {
+  id: string;
+  sponsorId: string;
+  entityType: 'club' | 'player';
+  clubId?: string;
+  playerId?: string;
+  contractStartDate: string;
+  contractEndDate: string;
+  expiryDate?: string;
+  contractDetails?: string;
+  documentPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  sponsor?: Sponsor;
+}
 
 export const CLUB_CONTACT_ROLES = ['Coach', 'Technical Director', 'Commercial Manager', 'Scout'];
 

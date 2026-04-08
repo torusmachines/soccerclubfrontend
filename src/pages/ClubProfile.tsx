@@ -3,8 +3,9 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { useAuth } from '@/context/AuthContext';
 import { hasPermission } from '@/lib/accessPolicy';
-import { ClubContact, CLUB_CONTACT_ROLES, Club, DOCUMENT_TYPES } from '@/types';
+import { ClubContact, Club, DOCUMENT_TYPES, ContactRole } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,21 +21,38 @@ import { Download } from "lucide-react";
 
 import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { fetchContractsByClub } from '@/services/apiService';
+import type { CommercialContract } from '@/types';
 
 
 
 const ClubProfile = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { clubs, clubContacts, addClubContact, deleteClubContact, documents, addDocument, players, notes } = useAppContext();
+  const { clubs, clubContacts, addClubContact, deleteClubContact, documents, addDocument, players, notes, reviews, contactRoles } = useAppContext();
   const { loadDocuments } = useAppContext();
   const canManageClubs = hasPermission(user?.role, 'clubs:manage');
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<string>('overview');
+  const [commercialContracts, setCommercialContracts] = useState<CommercialContract[]>([]);
 
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  useEffect(() => {
+    const loadCommercialContracts = async () => {
+      if (id) {
+        try {
+          const contracts = await fetchContractsByClub(id);
+          setCommercialContracts(contracts);
+        } catch (error) {
+          console.error('Failed to load commercial contracts', error);
+        }
+      }
+    };
+    loadCommercialContracts();
+  }, [id]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -61,6 +79,18 @@ const ClubProfile = () => {
     selectedType === 'ALL'
       ? clubDocs
       : clubDocs.filter(doc => doc.documentType?.toLowerCase() === selectedType?.toLowerCase());
+
+  const getDocumentLinks = (documentPath?: string) => {
+    if (!documentPath) return [];
+    return documentPath
+      .split(',,,')
+      .map(path => path.trim())
+      .filter(path => path)
+      .map(path => ({
+        path,
+        fileName: path.split('/').pop() || path,
+      }));
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -108,6 +138,7 @@ const ClubProfile = () => {
           <TabsTrigger value="notes">Notes ({notes.filter(a => a.clubId === club.clubId).length})</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="communication">Communication</TabsTrigger>
+          <TabsTrigger value="commercial">Commercial ({commercialContracts.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -126,9 +157,19 @@ const ClubProfile = () => {
                 {clubPlayers.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No tracked players at this club</p>
                 ) : clubPlayers.map(p => (
-                  <Link key={p.id} to={`/players/${p.id}`} className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary transition-colors">
-                    <span className="text-sm font-medium">{p.fullName}</span>
-                    <Badge variant="outline">{p.position}</Badge>
+                  <Link key={p.id} to={`/players/${p.id}`} className="group block rounded-lg border border-border p-3 hover:border-primary hover:bg-primary/5 transition-colors">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-sm font-medium text-foreground group-hover:text-primary">{p.fullName}</span>
+                      <Badge variant="outline">{p.position}</Badge>
+                    </div>
+                    <div className="flex items-start justify-between  mt-2 text-xs text-muted-foreground space-y-1">
+                      <div><label className="font-medium text-foreground group-hover:text-primary">Contract : </label> {p.contractStart ? format(new Date(p.contractStart), 'MMM d, yyyy') : 'N/A'} – {p.contractEnd ? format(new Date(p.contractEnd), 'MMM d, yyyy') : 'N/A'}</div>
+                      <div><label className="font-medium text-foreground group-hover:text-primary">Overall rating :</label> {(() => {
+                        const playerReviews = reviews.filter(r => String(r.playerId) === String(p.id));
+                        return playerReviews.length ? `${calculateOverallAverage(getAverageRatings(playerReviews)).toFixed(1)}/5` : 'N/A';
+                      })()}
+                      </div>
+                    </div>
                   </Link>
                 ))}
               </CardContent>
@@ -243,12 +284,85 @@ const ClubProfile = () => {
         <TabsContent value="communication" className="mt-4">
           <EmailModule entityType="club" entityId={club.clubId} readOnly={!canManageClubs} />
         </TabsContent>
+
+        <TabsContent value="commercial" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Commercial Contracts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {commercialContracts.length === 0 ? (
+                <p className="text-muted-foreground">No commercial contracts found for this club.</p>
+              ) : (
+                <div className="space-y-4">
+                  {commercialContracts.map((contract) => (
+                    <Card key={contract.id} className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <h4 className="font-semibold">{contract.sponsor?.companyName}</h4>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Start Date:</span>
+                              <span className="ml-2">{new Date(contract.contractStartDate).toLocaleDateString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">End Date:</span>
+                              <span className="ml-2">{new Date(contract.contractEndDate).toLocaleDateString()}</span>
+                            </div>
+                            {contract.expiryDate && (
+                              <div>
+                                <span className="text-muted-foreground">Expiry Date:</span>
+                                <span className="ml-2">{new Date(contract.expiryDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
+                            <div>
+                              <span className="text-muted-foreground">Status:</span>
+                              <Badge variant={new Date(contract.contractEndDate) > new Date() ? 'default' : 'destructive'} className="ml-2">
+                                {new Date(contract.contractEndDate) > new Date() ? 'Active' : 'Expired'}
+                              </Badge>
+                            </div>
+                          </div>
+                          {contract.contractDetails && (
+                            <div>
+                              <span className="text-muted-foreground">Details:</span>
+                              <p className="mt-1 text-sm">{contract.contractDetails}</p>
+                            </div>
+                          )}
+                          {getDocumentLinks(contract.documentPath).length > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Documents:</span>
+                              <div className="mt-1 space-y-1">
+                                {getDocumentLinks(contract.documentPath).map((doc) => (
+                                  <a
+                                    key={doc.path}
+                                    href={`https://localhost:7001${doc.path}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={doc.fileName}
+                                    className="block ml-2 text-sm text-blue-600 hover:underline"
+                                  >
+                                    {doc.fileName}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
 };
 
 const AddContactDialog = ({ clubId, onAdd }: { clubId: string; onAdd: (c: ClubContact) => void }) => {
+  const { contactRoles } = useAppContext();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
@@ -288,7 +402,9 @@ const AddContactDialog = ({ clubId, onAdd }: { clubId: string; onAdd: (c: ClubCo
           <div><Label>Role <span className="text-red-500">*</span></Label>
             <Select value={role} onValueChange={value => { setRole(value); setErrors(prev => ({ ...prev, role: '' })); }}>
               <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
-              <SelectContent>{CLUB_CONTACT_ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                {contactRoles.length > 0 ? contactRoles.map(r => <SelectItem key={r.roleId} value={r.roleName}>{r.roleName}</SelectItem>) : <SelectItem value="loading" disabled>Loading roles...</SelectItem>}
+              </SelectContent>
             </Select>
             {errors.role && <p className="text-xs text-destructive mt-1">{errors.role}</p>}
           </div>
@@ -301,7 +417,7 @@ const AddContactDialog = ({ clubId, onAdd }: { clubId: string; onAdd: (c: ClubCo
   );
 };
 const EditContactDialog = ({ contact }: { contact: ClubContact }) => {
-  const { updateClubContact } = useAppContext();
+  const { updateClubContact, contactRoles } = useAppContext();
   const [open, setOpen] = useState(false);
 
   const [name, setName] = useState(contact.contactName);
@@ -356,9 +472,9 @@ const EditContactDialog = ({ contact }: { contact: ClubContact }) => {
             <Select value={role} onValueChange={value => { setRole(value); setErrors(prev => ({ ...prev, role: '' })); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {CLUB_CONTACT_ROLES.map(r => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
+                {contactRoles.length > 0 ? contactRoles.map(r => (
+                  <SelectItem key={r.roleId} value={r.roleName}>{r.roleName}</SelectItem>
+                )) : <SelectItem value="loading" disabled>Loading roles...</SelectItem>}
               </SelectContent>
             </Select>
             {errors.role && <p className="text-xs text-destructive mt-1">{errors.role}</p>}

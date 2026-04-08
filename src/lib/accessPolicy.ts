@@ -12,7 +12,8 @@ export type Permission =
   | 'tasks:manage'
   | 'templates:view'
   | 'templates:manage'
-  | 'matching:view';
+  | 'matching:view'
+  | 'commercial:view';
 
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   Admin: [
@@ -28,6 +29,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'templates:view',
     'templates:manage',
     'matching:view',
+    'commercial:view',
   ],
   Player: [
     'dashboard:view',
@@ -65,6 +67,8 @@ export const hasPermission = (role: string | null | undefined, permission: Permi
 export const isPlayerRole = (role: string | null | undefined): boolean => normalizeRole(role) === 'Player';
 
 export const isScoutRole = (role: string | null | undefined): boolean => normalizeRole(role) === 'Scout';
+
+export const isAdminRole = (role: string | null | undefined): boolean => normalizeRole(role) === 'Admin';
 
 export const normalizeName = (value: string | null | undefined): string =>
   (value || '').trim().toLowerCase();

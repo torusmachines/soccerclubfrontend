@@ -19,7 +19,10 @@ import Scouts from "./pages/Scouts";
 import Tasks from "./pages/Tasks";
 import Templates from "./pages/Templates";
 import MatchingEngine from "./pages/MatchingEngine";
+import {Commercial} from "./pages/Commercial";
 import CompanyProfile from "./pages/Settings/CompanyProfile";
+import ManageRoles from "./pages/Settings/ManageRoles";
+import ManagePositions from "./pages/Settings/ManagePositions";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import Unauthorized from "./pages/Unauthorized";
@@ -148,10 +151,34 @@ function RouterContent() {
           }
         />
         <Route
+          path="commercial"
+          element={
+            <AdminRoute>
+              <Commercial />
+            </AdminRoute>
+          }
+        />
+        <Route
           path="settings/company-profile"
           element={
             <AdminRoute>
               <CompanyProfile />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="settings/manage-roles"
+          element={
+            <AdminRoute>
+              <ManageRoles />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="settings/manage-positions"
+          element={
+            <AdminRoute>
+              <ManagePositions />
             </AdminRoute>
           }
         />

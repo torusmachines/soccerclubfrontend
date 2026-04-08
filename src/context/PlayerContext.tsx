@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
-import { Player, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template } from '@/types';
+import { Player, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template, ContactRole, PlayerPosition } from '@/types';
 import {
   createClub, updateClubApi, deleteClubApi, uploadClubLogoApi, fetchTemplates,
   createClubContactApi, updateClubContactApi, deleteClubContactApi,
+  createContactRoleApi, updateContactRoleApi, deleteContactRoleApi,
+  fetchPlayerPositions, createPlayerPositionApi, updatePlayerPositionApi, deletePlayerPositionApi,
   createTemplateApi,
   updateTemplateApi,
   deleteTemplateApi, createPlayerApi,
@@ -21,11 +23,12 @@ import {
   uploadPlayerImageApi,
   createScoutApi,
   updateScoutApi,
-  deleteScoutApi
+  deleteScoutApi,
+  fetchScouts
 } from '@/services/apiService';
 import {
   initialPlayers, initialReviews, scouts as mockScouts,
-  initialClubs, initialClubContacts, initialNotes, initialTasks, initialEmails, initialTemplates,
+  initialClubs, initialClubContacts, initialContactRoles, initialPlayerPositions, initialNotes, initialTasks, initialEmails, initialTemplates,
 } from '@/data/mockData';
 import { addMonths, differenceInDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -40,6 +43,8 @@ interface AppContextType {
   documents: PlayerDocument[];
   clubs: Club[];
   clubContacts: ClubContact[];
+  contactRoles: ContactRole[];
+  playerPositions: PlayerPosition[];
   notes: Note[];
   tasks: Task[];
   emails: Email[];
@@ -49,7 +54,7 @@ interface AppContextType {
   updatePlayer: (p: Player) => Promise<Player>;
   deletePlayer: (id: string) => Promise<void>;
   addReview: (r: Review) => Promise<void>;
-  addDocument: (file: File, clubId?: string, playerId?: string) => void;
+  addDocument: (file: File, clubId?: string, playerId?: string, type?: string, isVisibleToPlayer?: boolean) => void;
   updateDocument: (id: string, payload: any) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
   addClub: (c: Club, logoFile?: File | null) => Promise<void>;
@@ -74,6 +79,12 @@ interface AppContextType {
   addScout: (s: Scout) => Promise<void>;
   updateScout: (s: Scout) => Promise<void>;
   deleteScout: (id: string) => Promise<void>;
+  addContactRole: (r: ContactRole) => Promise<void>;
+  updateContactRole: (r: ContactRole) => Promise<void>;
+  deleteContactRole: (id: string) => Promise<void>;
+  addPlayerPosition: (p: PlayerPosition) => Promise<void>;
+  updatePlayerPosition: (p: PlayerPosition) => Promise<void>;
+  deletePlayerPosition: (id: string) => Promise<void>;
   loadDocuments: () => Promise<void>;
 }
 
@@ -104,6 +115,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   const [documents, setDocuments] = useState<PlayerDocument[]>([]);
   const [clubs, setClubs] = useState<Club[]>(initialClubs);
   const [clubContacts, setClubContacts] = useState<ClubContact[]>(initialClubContacts);
+  const [contactRoles, setContactRoles] = useState<ContactRole[]>(initialContactRoles);
+  const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>(initialPlayerPositions);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [emails, setEmails] = useState<Email[]>(initialEmails);
@@ -290,10 +303,23 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     generateAutoTasks();
   }, []);
 
+  useEffect(() => {
+    const loadScouts = async () => {
+      try {
+        const data = await fetchScouts();
+        setScouts(data);
+      } catch (err) {
+        console.error("Failed to load scouts", err);
+        // Keep mock data as fallback
+      }
+    };
+    loadScouts();
+  }, []);
+
   // ── Context value ─────────────────────────────────────────────────────────
   return (
     <AppContext.Provider value={{
-      players, reviews, scouts, documents, clubs, clubContacts,
+      players, reviews, scouts, documents, clubs, clubContacts, contactRoles, playerPositions,
       notes, tasks, emails, templates, loadDocuments,
 
 
@@ -395,18 +421,18 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
 
           setPlayers(prev => [...prev, finalPlayer]);
 
-          try {
-            const recipient = finalPlayer.player_email || '';
-            if (recipient) {
-              const emailSubject = `New player created: ${finalPlayer.fullName}`;
-              const emailBody = `A new player has been created with the following details:\n\nName: ${finalPlayer.fullName}\nEmail: ${finalPlayer.player_email || 'N/A'}\nClub: ${finalPlayer.currentClub}\nPosition: ${finalPlayer.position}\n\nPlease review the new player in the application.`;
-              await sendPowerAutomateEmail(recipient, emailSubject, emailBody);
-            } else {
-              console.warn('Skipping email send because player has no email address');
-            }
-          } catch (err) {
-            console.error("Power Automate email failed", err);
-          }
+          // try {
+          //   const recipient = finalPlayer.player_email || '';
+          //   if (recipient) {
+          //     const emailSubject = `New player created: ${finalPlayer.fullName}`;
+          //     const emailBody = `A new player has been created with the following details:\n\nName: ${finalPlayer.fullName}\nEmail: ${finalPlayer.player_email || 'N/A'}\nClub: ${finalPlayer.currentClub}\nPosition: ${finalPlayer.position}\n\nPlease review the new player in the application.`;
+          //     await sendPowerAutomateEmail(recipient, emailSubject, emailBody);
+          //   } else {
+          //     console.warn('Skipping email send because player has no email address');
+          //   }
+          // } catch (err) {
+          //   console.error("Power Automate email failed", err);
+          // }
 
           showSuccess("Player Created", `${finalPlayer.fullName} added successfully`);
 
@@ -597,7 +623,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
       // ===========================================================
       // ===========================================================
 
-      addDocument: async (file: File, clubId?: string, playerId?: string, type?: string) => {
+      addDocument: async (file: File, clubId?: string, playerId?: string, type?: string, isVisibleToPlayer?: boolean) => {
         try {
           const base64 = await fileToBase64(file);
 
@@ -610,6 +636,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             documentDate: new Date().toISOString(),
             fileSizeLabel: `${(file.size / 1024).toFixed(1)} KB`,
             fileData: base64.split(',')[1],
+            isVisibleToPlayer: isVisibleToPlayer ?? false,
           };
 
           const created = await createDocumentApi(payload);
@@ -635,6 +662,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                   documentDate: payload.documentDate ?? d.documentDate,
                   fileSizeLabel: payload.fileSizeLabel ?? d.fileSizeLabel,
                   fileData: payload.fileData ?? d.fileData,
+                  isVisibleToPlayer: payload.isVisibleToPlayer ?? d.isVisibleToPlayer ?? false,
                 }
                 : d
             )
@@ -1222,6 +1250,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             state: s.state,
             postalCode: s.postalCode,
             country: s.country,
+            lockedAreas: s.lockedAreas,
+            isShowPlayer: s.isShowPlayer,
           });
 
           setScouts(prev => [...prev, created]);
@@ -1235,6 +1265,24 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
 
       updateScout: async (s) => {
         try {
+          console.log('PlayerContext.updateScout payload', {
+            scoutId: s.scoutId,
+            scoutName: s.scoutName,
+            roleName: s.roleName,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            email: s.email,
+            phoneNumber: s.phoneNumber,
+            addressLine1: s.addressLine1,
+            addressLine2: s.addressLine2,
+            city: s.city,
+            state: s.state,
+            postalCode: s.postalCode,
+            country: s.country,
+            lockedAreas: s.lockedAreas,
+            isShowPlayer: s.isShowPlayer,
+          });
+
           const updated = await updateScoutApi(s.scoutId, {
             scoutName: s.scoutName,
             roleName: s.roleName,
@@ -1248,6 +1296,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             state: s.state,
             postalCode: s.postalCode,
             country: s.country,
+            lockedAreas: s.lockedAreas,
+            isShowPlayer: s.isShowPlayer,
           });
 
           setScouts(prev =>
@@ -1273,6 +1323,106 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         } catch (err) {
           console.error("Delete scout API failed", err);
           showError("Error", "Failed to delete scout");
+        }
+      },
+
+      addContactRole: async (role: ContactRole) => {
+        try {
+          const created = await createContactRoleApi({
+            roleName: role.roleName,
+            description: role.description
+          });
+
+          setContactRoles(prev => [...prev, created]);
+          showSuccess("Role Created", "Contact role created successfully");
+
+        } catch (err) {
+          console.error("Create contact role API failed", err);
+          showError("Error", "Failed to create contact role");
+        }
+      },
+
+      updateContactRole: async (role: ContactRole) => {
+        try {
+          const updated = await updateContactRoleApi(role.roleId, {
+            roleName: role.roleName,
+            description: role.description
+          });
+
+          setContactRoles(prev =>
+            prev.map(x => x.roleId === role.roleId ? updated : x)
+          );
+          showSuccess("Role Updated", "Contact role updated successfully");
+
+        } catch (err) {
+          console.error("Update contact role API failed", err);
+          showError("Error", "Failed to update contact role");
+        }
+      },
+
+      deleteContactRole: async (id: string) => {
+        try {
+          await deleteContactRoleApi(id);
+
+          setContactRoles(prev =>
+            prev.filter(x => x.roleId !== id)
+          );
+          showSuccess("Role Deleted", "Contact role deleted successfully");
+
+        } catch (err) {
+          console.error("Delete contact role API failed", err);
+          showError("Error", "Failed to delete contact role");
+        }
+      },
+
+      addPlayerPosition: async (position: PlayerPosition) => {
+        try {
+          const created = await createPlayerPositionApi({
+            positionCode: position.positionCode,
+            positionName: position.positionName,
+            description: position.description
+          });
+
+          setPlayerPositions(prev => [...prev, created]);
+          showSuccess("Position Created", "Player position created successfully");
+
+        } catch (err) {
+          console.error("Create player position API failed", err);
+          showError("Error", "Failed to create player position");
+        }
+      },
+
+      updatePlayerPosition: async (position: PlayerPosition) => {
+        try {
+          const updated = await updatePlayerPositionApi(position.positionId, {
+            positionCode: position.positionCode,
+            positionName: position.positionName,
+            description: position.description
+          });
+
+          setPlayerPositions(prev =>
+            prev.map(x => x.positionId === position.positionId ? updated : x)
+          );
+          showSuccess("Position Updated", "Player position updated successfully");
+
+        } catch (err) {
+          console.error("Update player position API failed", err);
+          showError("Error", "Failed to update player position");
+        }
+      },
+
+      deletePlayerPosition: async (id: string) => {
+        try {
+          await deletePlayerPositionApi(id);
+
+          setPlayerPositions(prev =>
+            prev.filter(x => x.positionId !== id)
+          );
+          showSuccess("Position Deleted", "Player position deleted successfully");
+
+        } catch (err) {
+          console.error("Delete player position API failed", err);
+          showError("Error", "Failed to delete player position");
         }
       },
 

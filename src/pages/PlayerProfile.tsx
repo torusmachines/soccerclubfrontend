@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { getContractStatus, getAverageRatings, calculateOverallAverage, generateDevPlan } from '@/lib/playerUtils';
-import { NoteCategory, RATING_CATEGORIES, Ratings, DevelopmentPlan, Player, POSITIONS, DOCUMENT_TYPES } from '@/types';
+import { NoteCategory, RATING_CATEGORIES, Ratings, DevelopmentPlan, Player, DOCUMENT_TYPES, PlayerPosition } from '@/types';
 import { StarRating } from '@/components/StarRating';
 import { ContractBadge } from '@/components/ContractBadge';
 import { NotesModule } from '@/components/NotesModule';
@@ -29,6 +29,8 @@ import { useNavigate } from 'react-router-dom';
 import { uploadPlayerImageApi } from '@/services/apiService';
 import { useAuth } from '@/context/AuthContext';
 import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
+import { fetchContractsByPlayer } from '@/services/apiService';
+import type { CommercialContract } from '@/types';
 
 const PlayerProfile = () => {
   const { id } = useParams<{ id: string }>();
@@ -36,7 +38,7 @@ const PlayerProfile = () => {
   const isPlayer = isPlayerRole(user?.role);
   const isAdmin = user?.role === 'Admin';
   const isScout = isScoutRole(user?.role);
-  const { players, reviews, scouts, addReview, documents, addDocument, clubs, notes, updatePlayer, deletePlayer, loadDocuments } = useAppContext();
+  const { players, reviews, scouts, addReview, documents, addDocument, clubs, notes, updatePlayer, deletePlayer, loadDocuments, playerPositions } = useAppContext();
 
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [searchParams] = useSearchParams();
@@ -45,10 +47,37 @@ const PlayerProfile = () => {
 
   const [selectedDocType, setSelectedDocType] = useState<string>('ALL');
   const [activeTab, setActiveTab] = useState<string>('overview');
+  const [commercialContracts, setCommercialContracts] = useState<CommercialContract[]>([]);
+
+  const getDocumentLinks = (documentPath?: string) => {
+    if (!documentPath) return [];
+    return documentPath
+      .split(',,,')
+      .map(path => path.trim())
+      .filter(path => path)
+      .map(path => ({
+        path,
+        fileName: path.split('/').pop() || path,
+      }));
+  };
 
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  useEffect(() => {
+    const loadCommercialContracts = async () => {
+      if (id) {
+        try {
+          const contracts = await fetchContractsByPlayer(id);
+          setCommercialContracts(contracts);
+        } catch (error) {
+          console.error('Failed to load commercial contracts', error);
+        }
+      }
+    };
+    loadCommercialContracts();
+  }, [id]);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -161,45 +190,18 @@ const PlayerProfile = () => {
     return counts;
   }, [notes, id, isPlayer]);
 
-  useEffect(() => {
-    if (searchParams.get('edit') === 'true') {
-      setShouldOpenEditFromQuery(true);
-    }
-  }, [searchParams]);
+  const playerDocs = documents.filter(d => String(d.playerId) === String(id));
+  const visiblePlayerDocs = isPlayer ? playerDocs.filter(d => (d.isVisibleToPlayer ?? false)) : playerDocs;
 
-  useEffect(() => {
-    const tabParam = searchParams.get('tab');
-    if (tabParam && ['overview', 'reviews', 'tasks', 'documents', 'notes', 'emails', 'private', 'medical', 'technical', 'performance'].includes(tabParam)) {
-      setActiveTab(tabParam);
-    }
-  }, [searchParams]);
+  const visiblePlayerDocumentCount = useMemo(() => {
+    if (!isPlayer) return 0;
+    return playerDocs.filter(d => (d.isVisibleToPlayer ?? false)).length;
+  }, [playerDocs, isPlayer]);
+  const assignedScout = scouts.find(s => String(s.scoutId) === String(player.agent_scout_id));
 
-  useEffect(() => {
-    if (shouldOpenEditFromQuery && player) {
-      setEditPlayer(player);
-      setShouldOpenEditFromQuery(false);
-    }
-  }, [shouldOpenEditFromQuery, player]);
 
-  useEffect(() => {
-    if (!isPlayer) return;
-
-    const visibleTabs = ['overview'] as string[];
-    if (visiblePlayerNoteCounts.private > 0) visibleTabs.push('private');
-    if (visiblePlayerNoteCounts.medical > 0) visibleTabs.push('medical');
-    if (visiblePlayerNoteCounts.technical > 0) visibleTabs.push('technical');
-    if (visiblePlayerNoteCounts.performance > 0) visibleTabs.push('performance');
-
-    if (!visibleTabs.includes(activeTab)) {
-      setActiveTab('overview');
-    }
-  }, [isPlayer, activeTab, visiblePlayerNoteCounts]);
-
-  if (!player) return (
-    <div className="text-center py-20">
-      <p className="text-muted-foreground mb-4">Player not found</p>
-      <Link to="/players" className="text-primary underline">Back to players</Link>
-    </div>
+  const currentClub = clubs?.find(
+    c => String(c.clubId) === String(player.currentClub)
   );
 
   // const playerReviews = reviews.filter(r => r.playerId === id).sort((a, b) => new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime());
@@ -211,13 +213,6 @@ const PlayerProfile = () => {
   const avgRatings = getAverageRatings(playerReviews);
   const overallAvg = calculateOverallAverage(avgRatings);
   const contractStatus = getContractStatus(player);
-  const playerDocs = documents.filter(d => String(d.playerId) === String(id));
-  const assignedScout = scouts.find(s => String(s.scoutId) === String(player.agent_scout_id));
-
-
-  const currentClub = clubs?.find(
-    c => String(c.clubId) === String(player.currentClub)
-  );
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -310,6 +305,7 @@ const PlayerProfile = () => {
                   clubs={clubs}
                   isScout={isScout}
                   isPlayer={isPlayer}
+                  playerPositions={playerPositions}
                 />
               )}
             </DialogContent>
@@ -354,9 +350,10 @@ const PlayerProfile = () => {
           {( !isPlayer || visiblePlayerNoteCounts.medical > 0 ) && <TabsTrigger value="medical">Medical</TabsTrigger>}
           {( !isPlayer || visiblePlayerNoteCounts.technical > 0 ) && <TabsTrigger value="technical">Technical</TabsTrigger>}
           {( !isPlayer || visiblePlayerNoteCounts.performance > 0 ) && <TabsTrigger value="performance">Performance</TabsTrigger>}
+          {( !isPlayer || visiblePlayerDocumentCount > 0 ) && <TabsTrigger value="documents">Documents</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="tasks">Tasks</TabsTrigger>}
-          {!isPlayer && <TabsTrigger value="documents">Documents</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="emails">Email History</TabsTrigger>}
+          <TabsTrigger value="commercial">Commercial ({commercialContracts.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent id="player-tab-overview" value="overview" className="mt-4">
@@ -499,7 +496,7 @@ const PlayerProfile = () => {
           </TabsContent>
         )}
 
-        {!isPlayer && (
+        {( !isPlayer || visiblePlayerDocumentCount > 0 ) && (
           <TabsContent id="player-tab-documents" value="documents" className="mt-4 space-y-4">
             <div className="flex justify-end items-center gap-4">
               <Select value={selectedDocType} onValueChange={setSelectedDocType}>
@@ -517,11 +514,11 @@ const PlayerProfile = () => {
               {canManagePlayerCrud && <DocumentDialog playerId={player.id} onUpload={addDocument} />}
             </div>
 
-            {playerDocs.filter(d => selectedDocType === 'ALL' || d.documentType?.toLowerCase() === selectedDocType.toLowerCase()).length === 0 ? (
+            {visiblePlayerDocs.filter(d => selectedDocType === 'ALL' || d.documentType?.toLowerCase() === selectedDocType.toLowerCase()).length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No documents uploaded</p>
             ) : (
               <div className="space-y-2">
-                {playerDocs
+                {visiblePlayerDocs
                   .filter(d => selectedDocType === 'ALL' || d.documentType?.toLowerCase() === selectedDocType.toLowerCase())
                   .map(doc => (
                     <Card key={doc.documentId}>
@@ -559,6 +556,78 @@ const PlayerProfile = () => {
             <EmailModule entityType="player" entityId={player.id} readOnly={!canManagePlayerCrud} />
           </TabsContent>
         )}
+
+        <TabsContent id="player-tab-commercial" value="commercial" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Commercial Contracts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {commercialContracts.length === 0 ? (
+                <p className="text-muted-foreground">No commercial contracts found for this player.</p>
+              ) : (
+                <div className="space-y-4">
+                  {commercialContracts.map((contract) => (
+                    <Card key={contract.id} className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <h4 className="font-semibold">{contract.sponsor?.companyName}</h4>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Start Date:</span>
+                              <span className="ml-2">{new Date(contract.contractStartDate).toLocaleDateString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">End Date:</span>
+                              <span className="ml-2">{new Date(contract.contractEndDate).toLocaleDateString()}</span>
+                            </div>
+                            {contract.expiryDate && (
+                              <div>
+                                <span className="text-muted-foreground">Expiry Date:</span>
+                                <span className="ml-2">{new Date(contract.expiryDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
+                            <div>
+                              <span className="text-muted-foreground">Status:</span>
+                              <Badge variant={new Date(contract.contractEndDate) > new Date() ? 'default' : 'destructive'} className="ml-2">
+                                {new Date(contract.contractEndDate) > new Date() ? 'Active' : 'Expired'}
+                              </Badge>
+                            </div>
+                          </div>
+                          {contract.contractDetails && (
+                            <div>
+                              <span className="text-muted-foreground">Details:</span>
+                              <p className="mt-1 text-sm">{contract.contractDetails}</p>
+                            </div>
+                          )}
+                          {getDocumentLinks(contract.documentPath).length > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Documents:</span>
+                              <div className="mt-1 space-y-1">
+                                {getDocumentLinks(contract.documentPath).map((doc) => (
+                                  <a
+                                    key={doc.path}
+                                    href={`https://localhost:7001${doc.path}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={doc.fileName}
+                                    className="block ml-2 text-sm text-blue-600 hover:underline"
+                                  >
+                                    {doc.fileName}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -832,6 +901,7 @@ const EditPlayerForm = ({
   clubs,
   isScout,
   isPlayer,
+  playerPositions
 }: {
   player: Player;
   onClose: () => void;
@@ -841,6 +911,7 @@ const EditPlayerForm = ({
   clubs: any[];
   isScout: boolean;
   isPlayer: boolean;
+  playerPositions: PlayerPosition[];
 }) => {
   const [imageFile, setImageFile] = useState<File | null>(null);
 
@@ -1048,32 +1119,32 @@ const EditPlayerForm = ({
         <Select value={form.position} onValueChange={v => update('position', v)} disabled={!isFieldEditable('position')}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {POSITIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            {playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       <div>
-        <Label>Preferred Foot <span className="text-red-500">*</span></Label>
+        <Label>Laterality <span className="text-red-500">*</span></Label>
         <Select value={form.preferredFoot} onValueChange={v => update('preferredFoot', v)} disabled={!isFieldEditable('preferredFoot')}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="Left">Left</SelectItem>
             <SelectItem value="Right">Right</SelectItem>
-            <SelectItem value="Both">Both</SelectItem>
+            <SelectItem value="Both">Ambidextrous</SelectItem>
           </SelectContent>
         </Select>
         {errors.preferredFoot ? <p className="text-xs text-destructive mt-1">{errors.preferredFoot}</p> : null}
       </div>
 
       <div>
-        <Label>Height <span className="text-red-500">*</span></Label>
+        <Label>Height <span className="text-[14px] text-gray-500">(cm)</span> <span className="text-red-500">*</span></Label>
         <Input type="number" value={form.height} onChange={e => update('height', e.target.value)} disabled={!isFieldEditable('height')}/>
         {errors.height ? <p className="text-xs text-destructive mt-1">{errors.height}</p> : null}
       </div>
 
       <div>
-        <Label>Weight <span className="text-red-500">*</span></Label>
+        <Label>Weight <span className="text-[14px] text-gray-500">(kg)</span> <span className="text-red-500">*</span></Label>
         <Input type="number" value={form.weight} onChange={e => update('weight', e.target.value)} disabled={!isFieldEditable('weight')}/>
         {errors.weight ? <p className="text-xs text-destructive mt-1">{errors.weight}</p> : null}
       </div>
@@ -1191,20 +1262,27 @@ const DocumentDialog = ({
   doc,
 }: {
   playerId: string;
-  onUpload: (file: File, clubId?: string, playerId?: string, type?: string) => void;
+  onUpload: (file: File, clubId?: string, playerId?: string, type?: string, isVisibleToPlayer?: boolean) => void;
   doc?: any;
 }) => {
   const { updateDocument } = useAppContext();
+  const { user } = useAuth();
+  const isPlayerUser = isPlayerRole(user?.role);
+  const isScoutUser = isScoutRole(user?.role);
+  const isAdminUser = user?.role === 'Admin';
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [type, setType] = useState(doc?.documentType || '');
+  const [isVisibleToPlayer, setIsVisibleToPlayer] = useState(doc?.isVisibleToPlayer ?? false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (doc && open) {
       setType(doc.documentType || '');
+      setIsVisibleToPlayer(doc.isVisibleToPlayer ?? false);
     } else if (!doc && open) {
       setType('');
+      setIsVisibleToPlayer(false);
     }
     if (open) {
       setFile(null);
@@ -1234,6 +1312,7 @@ const DocumentDialog = ({
         playerId: doc.playerId ? String(doc.playerId) : null,
         fileData: doc.fileData,
         fileSizeLabel: doc.fileSizeLabel,
+        isVisibleToPlayer,
       };
 
       if (file) {
@@ -1248,7 +1327,7 @@ const DocumentDialog = ({
     } else {
       if (!file) return;
       // onUpload(file, undefined, playerId, type);
-      onUpload(file, undefined, String(playerId), type);
+      onUpload(file, undefined, String(playerId), type, isVisibleToPlayer);
     }
 
     setOpen(false);
@@ -1256,8 +1335,10 @@ const DocumentDialog = ({
 
     if (isEdit) {
       setType(doc.documentType || '');
+      setIsVisibleToPlayer(doc.isVisibleToPlayer ?? false);
     } else {
       setType('');
+      setIsVisibleToPlayer(false);
     }
     setErrors({});
   };
@@ -1316,6 +1397,13 @@ const DocumentDialog = ({
             />
             {errors.file && <p className="text-xs text-destructive mt-1">{errors.file}</p>}
           </div>
+
+          {(isAdminUser || isScoutUser) && (
+            <div className="flex items-center gap-2">
+              <Switch id="isVisibleToPlayer" checked={isVisibleToPlayer} onCheckedChange={setIsVisibleToPlayer} />
+              <Label htmlFor="isVisibleToPlayer">Show this document to player: {isVisibleToPlayer ? 'Yes' : 'No'}</Label>
+            </div>
+          )}
 
           <Button onClick={handleSubmit} className="w-full">
             {isEdit ? 'Update' : 'Upload'}

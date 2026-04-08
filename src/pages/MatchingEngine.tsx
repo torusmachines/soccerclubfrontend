@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { usePlayerContext } from '@/context/PlayerContext';
 import { matchPlayers } from '@/lib/playerUtils';
-import { POSITIONS, MatchCriteria, RATING_CATEGORIES } from '@/types';
+import { MatchCriteria, RATING_CATEGORIES } from '@/types';
 import { StarRating } from '@/components/StarRating';
 import { ContractBadge } from '@/components/ContractBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { Target, RotateCcw, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 const MatchingEngine = () => {
-  const { players, reviews } = usePlayerContext();
+  const { players, reviews, playerPositions } = usePlayerContext();
   const [criteria, setCriteria] = useState<MatchCriteria>({});
   const [hasSearched, setHasSearched] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -194,7 +194,7 @@ const MatchingEngine = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="any">Any</SelectItem>
-                  {POSITIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  {playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
