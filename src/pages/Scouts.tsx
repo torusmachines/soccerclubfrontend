@@ -197,7 +197,7 @@ const Scouts = () => {
           open={addOpen} 
           onOpenChange={setAddOpen}
           onSubmit={addScout}
-          title="Add New Scout"
+          title="Add New Coach"
         />
       )}
 
@@ -362,7 +362,7 @@ const ScoutFormDialog = ({
         <div className="grid grid-cols-2 gap-4">
           {/* Full Name / Scout Name */}
           <div className="col-span-2">
-            <Label>Full Name (Scout Name) <span className="text-red-500">*</span></Label>
+            <Label>Full Name (Coach Name) <span className="text-red-500">*</span></Label>
             <Input 
               value={form.scoutName || ''} 
               onChange={e => update('scoutName', e.target.value)} 
@@ -378,7 +378,7 @@ const ScoutFormDialog = ({
             <Input 
               value={form.roleName || ''} 
               onChange={e => update('roleName', e.target.value)} 
-              placeholder="e.g., Senior Scout, Youth Scout"
+              placeholder="e.g., Senior Coach, Youth Coach, etc."
               disabled={isLoading}
             />
             {errors.roleName ? <p className="text-xs text-destructive mt-1">{errors.roleName}</p> : null}
@@ -413,7 +413,7 @@ const ScoutFormDialog = ({
               type="email"
               value={form.email || ''} 
               onChange={e => update('email', e.target.value)} 
-              placeholder="scout@example.com"
+              placeholder="coach@example.com"
               disabled={isLoading}
             />
           </div>
@@ -500,10 +500,10 @@ const ScoutFormDialog = ({
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {initialScout ? 'Updating...' : 'Adding scout...'}
+              {initialScout ? 'Updating...' : 'Adding coach...'}
             </>
           ) : (
-            initialScout ? 'Update Scout' : 'Add Scout'
+            initialScout ? 'Update Coach' : 'Add Coach'
           )}
         </Button>
       </DialogContent>

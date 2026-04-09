@@ -42,7 +42,7 @@ const Login = () => {
               <span className="text-white text-lg font-bold">⚽</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Football Dashboard</CardTitle>
+          <CardTitle className="text-2xl text-center">Yourdan Agency Dashboard</CardTitle>
           <p className="text-sm text-muted-foreground text-center">
             Sign in to your account
           </p>

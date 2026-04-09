@@ -335,7 +335,7 @@ const ClubProfile = () => {
                                 {getDocumentLinks(contract.documentPath).map((doc) => (
                                   <a
                                     key={doc.path}
-                                    href={`https://localhost:7001${doc.path}`}
+                                    href={`https://soccerclubbackend.onrender.com${doc.path}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     download={doc.fileName}

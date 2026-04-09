@@ -625,7 +625,7 @@ export const Commercial = () => {
                             {getDocumentLinks(editingContract.documentPath).map((doc) => (
                               <li key={doc.path} className="flex items-center justify-between gap-4 rounded-md bg-background px-3 py-2">
                                 <a
-                                  href={`https://localhost:7001${doc.path}`}
+                                  href={`https://soccerclubbackend.onrender.com${doc.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   download={doc.fileName}
@@ -692,7 +692,7 @@ export const Commercial = () => {
                       {getDocumentLinks(contract.documentPath).map((doc, index) => (
                         <a
                           key={index}
-                          href={`https://localhost:7001${doc.path}`}
+                          href={`https://soccerclubbackend.onrender.com${doc.path}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
