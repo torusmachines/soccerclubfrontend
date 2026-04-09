@@ -54,7 +54,7 @@ function DataLoader({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 bg-background">
         <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
-        <p className="text-muted-foreground text-sm">Loading scouting data...</p>
+        <p className="text-muted-foreground text-sm">Loading...</p>
       </div>
     );
   }
