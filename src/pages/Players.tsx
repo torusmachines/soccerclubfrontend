@@ -94,7 +94,7 @@ const Players = () => {
         <Select value={scoutFilter} onValueChange={setScoutFilter}>
           <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Scouts</SelectItem>
+            <SelectItem value="all">All Coaches</SelectItem>
             {scouts.map(s => <SelectItem key={s.scoutId} value={String(s.scoutId)}>{s.scoutName}</SelectItem>)}
           </SelectContent>
         </Select>

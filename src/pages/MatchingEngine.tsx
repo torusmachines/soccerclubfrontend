@@ -199,14 +199,14 @@ const MatchingEngine = () => {
               </Select>
             </div>
             <div>
-              <Label>Preferred Foot</Label>
+              <Label>Laterality</Label>
               <Select value={criteria.preferredFoot || 'any'} onValueChange={v => updateCriteria('preferredFoot', v === 'any' ? undefined : v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="any">Any</SelectItem>
                   <SelectItem value="Left">Left</SelectItem>
                   <SelectItem value="Right">Right</SelectItem>
-                  <SelectItem value="Both">Both</SelectItem>
+                  <SelectItem value="Both">Ambidextrous</SelectItem>
                 </SelectContent>
               </Select>
             </div>

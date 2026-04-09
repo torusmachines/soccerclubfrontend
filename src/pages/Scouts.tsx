@@ -68,7 +68,7 @@ const Scouts = () => {
   }, [shouldOpenOwnEdit, scouts, user?.email]);
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this scout?')) {
+    if (window.confirm('Are you sure you want to delete this coach?')) {
       await deleteScout(id);
     }
   };
@@ -206,7 +206,7 @@ const Scouts = () => {
           open={editOpen} 
           onOpenChange={setEditOpen}
           onSubmit={updateScout}
-          title="Edit Scout"
+          title="Edit Coach"
           initialScout={editingScout}
         />
       )}
@@ -587,7 +587,7 @@ const LockAreasDialog = ({
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label htmlFor="showAllPlayers">Show All Players (Yes/No)</Label>
-              <p className="text-xs text-muted-foreground">Allow this scout to view all players.</p>
+              <p className="text-xs text-muted-foreground">Allow this coach to view all players.</p>
             </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="showAllPlayers" className="text-sm">
