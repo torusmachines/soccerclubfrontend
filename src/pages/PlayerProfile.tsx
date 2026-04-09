@@ -238,7 +238,7 @@ const PlayerProfile = () => {
             <p className="text-sm text-muted-foreground mt-1">
               {/* {player.currentClub} · {player.nationality} */}
               {currentClub?.clubName || 'N/A'} · {player.nationality}
-              {assignedScout && <> · Scout: {assignedScout.scoutName}</>}
+              {assignedScout && <> · Coach: {assignedScout.scoutName}</>}
             </p>
           </div>
         </div>
@@ -1189,7 +1189,7 @@ const EditPlayerForm = ({
       </div>
 
       <div>
-        <Label>Scout <span className="text-red-500">*</span></Label>
+        <Label>Coach <span className="text-red-500">*</span></Label>
         <Select value={form.agent_scout_id} onValueChange={v => update('agent_scout_id', v)} /*disabled={!isFieldEditable('agent_scout_id')}*/>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -1203,12 +1203,12 @@ const EditPlayerForm = ({
         {errors.agent_scout_id ? <p className="text-xs text-destructive mt-1">{errors.agent_scout_id}</p> : null}
       </div>
 
-      <div className="col-span-2">
+      {/* <div className="col-span-2"> */}
         {/* <Label>Contact Info <span className="text-red-500">*</span></Label> */}
-        <Label>Contact Info </Label>
-        <Input value={form.contact_info} onChange={e => update('contact_info', e.target.value)}  disabled={!isFieldEditable('contact_info')} />
+        {/* <Label>Contact Info </Label> */}
+        {/* <Input value={form.contact_info} onChange={e => update('contact_info', e.target.value)}  disabled={!isFieldEditable('contact_info')} /> */}
         {/* {errors.contact_info ? <p className="text-xs text-destructive mt-1">{errors.contact_info}</p> : null} */}
-      </div>
+      {/* </div> */}
 
       <Button onClick={handleSubmit} className="col-span-2 mt-4">
         Update Player

@@ -576,14 +576,14 @@ const AddPlayerDialog = ({
             {errors.email ? <p className="text-xs text-destructive mt-1">{errors.email}</p> : null}
           </div>
 
-          <div className="col-span-2">
+          {/* <div className="col-span-2">
             <Label>Contact Info </Label>
             <Input 
               value={form.contact_info} 
               onChange={e => update('contact_info', e.target.value)}
               disabled={isLoading}
             />
-          </div>
+          </div> */}
         </div>
         <Button onClick={handleSubmit} className="w-full mt-4" disabled={isLoading}>
           {isLoading ? (
