@@ -37,11 +37,11 @@ const Login = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2">
-          <div className="flex items-center justify-center gap-2 mb-2">
+          {/* <div className="flex items-center justify-center gap-2 mb-2">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-white text-lg font-bold">⚽</span>
             </div>
-          </div>
+          </div> */}
           <CardTitle className="text-2xl text-center">Yourdan Agency Dashboard</CardTitle>
           <p className="text-sm text-muted-foreground text-center">
             Sign in to your account
