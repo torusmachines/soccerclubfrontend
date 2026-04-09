@@ -287,7 +287,7 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
           <p className="text-xs text-muted-foreground">Variables: {TEMPLATE_VARIABLES.join(', ')}</p>
           <div><Label>Sent By <span className="text-red-500">*</span></Label>
             <Select value={sentBy} onValueChange={value => { setSentBy(value); setErrors(prev => ({ ...prev, sentBy: '' })); }}>
-              <SelectTrigger><SelectValue placeholder="Select scout" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select coach" /></SelectTrigger>
               <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
             </Select>
             {errors.sentBy && <p className="text-xs text-destructive mt-1">{errors.sentBy}</p>}

@@ -418,7 +418,7 @@ const AddTaskDialog = ({ players, clubs, scouts, onAdd }: { players: any[]; club
           </div>
           <div><Label>Assigned To <span className="text-red-500">*</span></Label>
             <Select value={assignedTo} onValueChange={value => { setAssignedTo(value); setErrors(prev => ({ ...prev, assignedTo: '' })); }}>
-              <SelectTrigger><SelectValue placeholder="Select scout" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select Coach" /></SelectTrigger>
               <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
             </Select>
             {errors.assignedTo && <p className="text-xs text-destructive mt-1">{errors.assignedTo}</p>}

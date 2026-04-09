@@ -556,9 +556,9 @@ const AddPlayerDialog = ({
           <div><Label>Agent Name</Label><Input value={form.agentName} onChange={e => update('agentName', e.target.value)} /></div>
 
           <div>
-            <Label>Assigned Scout <span className="text-red-500">*</span></Label>
+            <Label>Assigned Coach <span className="text-red-500">*</span></Label>
             <Select value={form.agent_scout_id} onValueChange={v => update('agent_scout_id', v)}>
-              <SelectTrigger><SelectValue placeholder="Select scout" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select Coach" /></SelectTrigger>
               <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
             </Select>
             {errors.agent_scout_id ? <p className="text-xs text-destructive mt-1">{errors.agent_scout_id}</p> : null}

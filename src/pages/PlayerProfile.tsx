@@ -416,7 +416,7 @@ const PlayerProfile = () => {
               </div>
             )}
             {playerReviews.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No reviews yet. Add a scouting review to get started.</p>
+              <p className="text-center text-muted-foreground py-8">No reviews yet. Add a coaching review to get started.</p>
             ) : (
               <div className="space-y-4">
                 {playerReviews.map(review => {
@@ -744,12 +744,12 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button size="sm"><Plus size={14} className="mr-1" /> Add Review</Button></DialogTrigger>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>New Scouting Review</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>New Coaching Review</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label>Scout <span className="text-red-500">*</span></Label>
+            <Label>Coach <span className="text-red-500">*</span></Label>
             <Select value={scoutId} onValueChange={value => { setScoutId(value); setErrors(prev => ({ ...prev, scoutId: '' })); }}>
-              <SelectTrigger><SelectValue placeholder="Select scout" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select Coach" /></SelectTrigger>
               <SelectContent>
                 {scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}
               </SelectContent>
