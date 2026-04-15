@@ -218,13 +218,13 @@ const SportsManagement = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button
+                            {/* <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleEditSport(sport)}
                             >
                               <Edit className="w-4 h-4" />
-                            </Button>
+                            </Button> */}
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
@@ -353,13 +353,13 @@ const SportsManagement = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button
+                            {/* <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleEditActivity(activity)}
                             >
                               <Edit className="w-4 h-4" />
-                            </Button>
+                            </Button> */}
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">

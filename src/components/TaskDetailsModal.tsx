@@ -596,22 +596,22 @@ export const TaskDetailsModal = ({
                                                         {/* Actions */}
                                                         {isAuthor && !isEditingThis && (
                                                             <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                                <Button
+                                                                {/* <Button
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="h-6 w-6"
                                                                     onClick={() => startEditComment(comment)}
                                                                 >
                                                                     <Edit size={12} />
-                                                                </Button>
-                                                                <Button
+                                                                </Button> */}
+                                                                {/* <Button
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="h-6 w-6 text-destructive"
                                                                     onClick={() => handleDeleteComment(comment.commentId)}
                                                                 >
                                                                     <Trash2 size={12} />
-                                                                </Button>
+                                                                </Button> */}
                                                             </div>
                                                         )}
                                                     </div>
