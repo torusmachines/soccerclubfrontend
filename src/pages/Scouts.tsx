@@ -9,9 +9,11 @@ import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Search, Plus, Edit, Trash2, Loader2, AccessibilityIcon, LockKeyholeIcon } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { isPlayerRole, isScoutRole, isAdminRole } from '@/lib/accessPolicy';
 
@@ -20,13 +22,14 @@ const Scouts = () => {
   const isPlayer = isPlayerRole(user?.role);
   const isScout = isScoutRole(user?.role);
   const isAdmin = isAdminRole(user?.role);
-  const { scouts, addScout, updateScout, deleteScout } = useAppContext();
+  const { scouts, addScout, updateScout, deleteScout, sports } = useAppContext();
 
   // Find the logged-in scout's own record by email match
   const ownScoutId = isScout
     ? scouts.find(s => (s.email || '').trim().toLowerCase() === (user?.email || '').trim().toLowerCase())?.scoutId
     : null;
   const [search, setSearch] = useState('');
+  const [sportFilter, setSportFilter] = useState('all');
   const [addOpen, setAddOpen] = useState(false);
   const [editingScout, setEditingScout] = useState<Scout | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -45,9 +48,10 @@ const Scouts = () => {
         s.email?.toLowerCase().includes(search.toLowerCase()) ||
         s.phoneNumber?.includes(search) ||
         false;
-      return matchesSearch;
+      const matchesSport = sportFilter === 'all' || String(s.sportId) === sportFilter;
+      return matchesSearch && matchesSport;
     });
-  }, [scouts, search]);
+  }, [scouts, search, sportFilter]);
 
   useEffect(() => {
     if (searchParams.get('editMe') === 'true') {
@@ -110,17 +114,26 @@ const Scouts = () => {
         )}
       </div>
 
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input 
-          placeholder="Search coaches by name, role, email or phone..." 
-          value={search} 
-          onChange={e => setSearch(e.target.value)} 
-          className="pl-9" 
-        />
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input 
+            placeholder="Search coaches by name, role, email or phone..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+            className="pl-9" 
+          />
+        </div>
+        <Select value={sportFilter} onValueChange={setSportFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="All Sports" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sports</SelectItem>
+            {sports.map(s => <SelectItem key={s.sportId} value={String(s.sportId)}>{s.sportName}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <div className="hidden sm:block border rounded-lg overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -132,6 +145,7 @@ const Scouts = () => {
               <TableHead>Phone</TableHead>
               <TableHead>City</TableHead>
               <TableHead>Country</TableHead>
+              <TableHead>Sport</TableHead>
               {!isPlayer && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
@@ -146,10 +160,10 @@ const Scouts = () => {
                 <TableCell>{scout.phoneNumber || '-'}</TableCell>
                 <TableCell>{scout.city || '-'}</TableCell>
                 <TableCell>{scout.country || '-'}</TableCell>
+                <TableCell>{sports.find(s => s.sportId === scout.sportId)?.sportName || '-'}</TableCell>
                 {!isPlayer && (
                   <TableCell>
                     <div className="flex gap-2">
-                      {/* Lock button only for Admin */}
                       {isAdmin && (
                         <Button 
                           size="sm" 
@@ -159,7 +173,6 @@ const Scouts = () => {
                           <LockKeyholeIcon size={14} />
                         </Button>
                       )}
-                      {/* Scout: edit only own row; Admin: edit any */}
                       {!isScout && (
                         <Button 
                           size="sm" 
@@ -169,7 +182,6 @@ const Scouts = () => {
                           <Edit size={14} />
                         </Button>
                       )}
-                      {/* Scout cannot delete; Admin can delete any */}
                       {!isScout && (
                         <Button 
                           size="sm" 
@@ -186,6 +198,62 @@ const Scouts = () => {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="space-y-4 sm:hidden">
+        {filtered.map(scout => (
+          <Card key={scout.scoutId} className="border border-border pt-5">
+            <CardContent className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate">{scout.scoutName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{scout.roleName}</p>
+                </div>
+                {!isPlayer && (
+                  <div className="flex flex-wrap gap-2">
+                    {isAdmin && (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleLockClick(scout)}
+                      >
+                        <LockKeyholeIcon size={14} />
+                      </Button>
+                    )}
+                    {!isScout && (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleEditClick(scout)}
+                      >
+                        <Edit size={14} />
+                      </Button>
+                    )}
+                    {!isScout && (
+                      <Button 
+                        size="sm" 
+                        variant="destructive"
+                        onClick={() => handleDelete(scout.scoutId)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <div><span className="font-medium">Email:</span> {scout.email || '-'}</div>
+                <div><span className="font-medium">Phone:</span> {scout.phoneNumber || '-'}</div>
+                <div><span className="font-medium">Location:</span> {scout.city || '-'}, {scout.country || '-'}</div>
+                <div><span className="font-medium">Sport:</span> {sports.find(s => s.sportId === scout.sportId)?.sportName || '-'}</div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <div><span className="font-medium">First:</span> {scout.firstName || '-'}</div>
+                  <div><span className="font-medium">Last:</span> {scout.lastName || '-'}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {filtered.length === 0 && (
@@ -238,7 +306,8 @@ interface ScoutFormDialogProps {
 const getInitialScoutForm = (initialScout?: Scout): Partial<Scout> => {
   if (!initialScout) {
     return {
-      country: 'India'
+      country: 'India',
+      sportId: undefined
     };
   }
 
@@ -254,7 +323,8 @@ const getInitialScoutForm = (initialScout?: Scout): Partial<Scout> => {
     city: initialScout.city,
     state: initialScout.state,
     postalCode: initialScout.postalCode,
-    country: initialScout.country || 'India'
+    country: initialScout.country || 'India',
+    sportId: initialScout.sportId
   };
 };
 
@@ -266,6 +336,7 @@ const ScoutFormDialog = ({
   initialScout
 }: ScoutFormDialogProps) => {
   const { toast } = useToast();
+  const { sports } = useAppContext();
   const [form, setForm] = useState<Partial<Scout>>(getInitialScoutForm(initialScout));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -312,7 +383,8 @@ const ScoutFormDialog = ({
         postalCode: form.postalCode?.trim() || undefined,
         country: form.country || 'India',
         lockedAreas: initialScout?.lockedAreas,
-        createdAt: initialScout?.createdAt || new Date().toISOString()
+        createdAt: initialScout?.createdAt || new Date().toISOString(),
+        sportId: form.sportId ? Number(form.sportId) : undefined
       };
 
       console.log('ScoutFormDialog payload', payload);
@@ -494,6 +566,22 @@ const ScoutFormDialog = ({
               placeholder="Country"
               disabled={isLoading}
             />
+          </div>
+
+          {/* Sport */}
+          <div>
+            <Label>Sport</Label>
+            <Select
+              value={form.sportId ? String(form.sportId) : ''}
+              onValueChange={v => update('sportId', v)}
+            >
+              <SelectTrigger disabled={isLoading}><SelectValue placeholder="Select sport" /></SelectTrigger>
+              <SelectContent>
+                {sports.map(s => (
+                  <SelectItem key={s.sportId} value={String(s.sportId)}>{s.sportName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <Button onClick={handleSubmit} className="w-full mt-6" disabled={isLoading}>

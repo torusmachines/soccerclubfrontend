@@ -1,36 +1,7 @@
-import { Player, Review, Ratings, ContractStatus, DevelopmentPlan, DevelopmentGoal, MatchCriteria, RATING_CATEGORIES } from '@/types';
+import { Player, Review, Ratings, ContractStatus, DevelopmentPlan, DevelopmentGoal, MatchCriteria, RATING_CATEGORIES, SportActivity } from '@/types';
 import { addMonths, differenceInDays } from 'date-fns';
 import { getContractExpiringMonths } from '@/lib/settingsUtils';
 
-type RatingKey =
-  | "passing"
-  | "shooting"
-  | "dribbling"
-  | "tacticalAwareness"
-  | "defensiveContribution"
-  | "physicalStrength"
-  | "behavior"
-  | "overallPerformance";
-
-const ratingKeys: RatingKey[] = [
-  "passing",
-  "shooting",
-  "dribbling",
-  "tacticalAwareness",
-  "defensiveContribution",
-  "physicalStrength",
-  "behavior",
-  "overallPerformance"
-];
-
-// Contract status logic: compare only differenceInMonths
-// export function getContractStatus(player: Player): ContractStatus {
-//   const now = new Date();
-//   const end = new Date(player.contractEnd);
-//   if (end < now) return 'Available';
-//   if (differenceInMonths(end, now) <= 6) return 'Expiring Soon';
-//   return 'Active';
-// }
 
 
 export function getContractStatus(player: Player): ContractStatus {
@@ -72,40 +43,70 @@ const emptyRatings: Ratings = {
 //   (Object.keys(sum) as (keyof Ratings)[]).forEach(k => { avg[k] = sum[k] / reviews.length; });
 //   return avg as Ratings;
 // }
-export function getAverageRatings(reviews: Review[]): Ratings {
+export function buildRatingsFromActivityRows(review: Review, sportActivities: SportActivity[]): Ratings {
+  const ratings = { ...emptyRatings };
+  if (!review.revRatingActivities || review.revRatingActivities.length === 0) return ratings;
 
+  const activityKeyMap = sportActivities.reduce((acc, activity) => {
+    if (activity.activityId !== undefined && activity.activityName) {
+      acc[activity.activityId] = activityNameToKey(activity.activityName);
+    }
+    return acc;
+  }, {} as Record<number, string>);
+
+  const counts: Record<string, number> = {};
+
+  review.revRatingActivities.forEach(activityRating => {
+    const key = activityKeyMap[activityRating.activityId];
+    if (!key) return;
+    const value = Number(activityRating.rating || 0);
+    (ratings as any)[key] = ((ratings as any)[key] || 0) + value;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  Object.entries(counts).forEach(([key, count]) => {
+    if (count > 0) {
+      (ratings as any)[key] = (ratings as any)[key] / count;
+    }
+  });
+
+  return ratings;
+}
+
+export function getAverageRatings(reviews: Review[], sportActivities?: SportActivity[]): Ratings {
   if (reviews.length === 0) return { ...emptyRatings };
 
   const sum = { ...emptyRatings };
+  let ratedReviews = 0;
 
   reviews.forEach(r => {
+    const reviewRatings = r.revRatings ?? (sportActivities ? buildRatingsFromActivityRows(r, sportActivities) : undefined);
+    if (!reviewRatings) return;
 
-    if (!r.revRatings) return;
-
-    ratingKeys.forEach(k => {
-      sum[k] += r.revRatings![k];
+    ratedReviews += 1;
+    Object.entries(reviewRatings).forEach(([key, value]) => {
+      if (key === 'reviewId' || key === 'review') return;
+      (sum as any)[key] = ((sum as any)[key] || 0) + Number(value || 0);
     });
-
   });
 
-  const avg: Ratings = { ...emptyRatings };
+  if (ratedReviews === 0) return { ...emptyRatings };
 
-  ratingKeys.forEach(k => {
-    avg[k] = sum[k] / reviews.length;
+  const avg: Ratings = { ...emptyRatings };
+  Object.keys(sum).forEach(key => {
+    if (key === 'reviewId' || key === 'review') return;
+    (avg as any)[key] = ((sum as any)[key] || 0) / ratedReviews;
   });
 
   return avg;
 }
 
-// export function calculateOverallAverage(ratings: Ratings): number {
-//   const vals = Object.values(ratings);
-//   if (vals.length === 0) return 0;
-//   return vals.reduce((s, v) => s + v, 0) / vals.length;
-// }
-export function calculateOverallAverage(ratings: Ratings): number {
-  const vals = Object.values(ratings).filter(
-    (v): v is number => typeof v === "number"
-  );
+export function calculateOverallAverage(ratings?: Ratings | null): number {
+  const vals = ratings
+    ? Object.entries(ratings)
+        .filter(([, value]) => typeof value === 'number' && value > 0)
+        .map(([, value]) => value as number)
+    : [];
 
   if (vals.length === 0) return 0;
 
@@ -149,6 +150,38 @@ export function matchPlayers(players: Player[], reviews: Review[], criteria: Mat
   }).sort((a, b) => b.matchScore - a.matchScore);
 }
 
+// ── Sport-activity helpers ──────────────────────────────────────────────────
+
+/**
+ * Converts an activity name (e.g. "Tactical Awareness", "Behavior / Attitude")
+ * into the camelCase key used in the Ratings object (e.g. "tacticalAwareness", "behavior").
+ * Only the segment before the first "/" is used.
+ */
+export function activityNameToKey(activityName: string): string {
+  const mainPart = activityName.split('/')[0].trim();
+  const words = mainPart.split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return '';
+  return (
+    words[0].toLowerCase() +
+    words.slice(1).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('')
+  );
+}
+
+/**
+ * Converts a SportActivity array into the { key, label }[] format used for
+ * RATING_CATEGORIES. Falls back to the static RATING_CATEGORIES when the
+ * array is empty (e.g. while the API is still loading).
+ */
+export function getRatingCategories(
+  activities: SportActivity[]
+): { key: string; label: string }[] {
+  if (!activities || activities.length === 0) return RATING_CATEGORIES;
+  return activities.map(a => ({
+    key: activityNameToKey(a.activityName),
+    label: a.activityName,
+  }));
+}
+
 const TRAINING_TIPS: Record<string, string[]> = {
   passing: ['Long-range passing drills with both feet', 'One-touch passing exercises in small-sided games', 'Vision training through pattern recognition drills'],
   shooting: ['Finishing drills from various angles and distances', 'Shooting under pressure in game-like scenarios', 'Weak foot finishing accuracy training'],
@@ -160,8 +193,15 @@ const TRAINING_TIPS: Record<string, string[]> = {
   overallPerformance: ['Full match simulation training', 'Individualized performance review sessions', 'Goal-setting and tracking program'],
 };
 
-export function generateDevPlan(player: Player, avgRatings: Ratings): DevelopmentPlan {
-  const sorted = RATING_CATEGORIES.map(c => ({ ...c, value: avgRatings[c.key] })).sort((a, b) => a.value - b.value);
+export function generateDevPlan(
+  player: Player,
+  avgRatings: Ratings,
+  ratingCategories?: { key: string; label: string }[]
+): DevelopmentPlan {
+  const cats = ratingCategories ?? RATING_CATEGORIES;
+  const sorted = cats
+    .map(c => ({ ...c, value: (avgRatings as any)[c.key] ?? 0 }))
+    .sort((a, b) => a.value - b.value);
   const weakest = sorted.slice(0, 3);
 
   const goals: DevelopmentGoal[] = weakest.map(c => ({

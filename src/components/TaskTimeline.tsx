@@ -157,7 +157,7 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
         task={selectedTask}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
+        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Auto-generated') : 'Auto-generated'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
         scouts={scouts}

@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
-import { getContractStatus, getAverageRatings, calculateOverallAverage, generateDevPlan } from '@/lib/playerUtils';
-import { NoteCategory, RATING_CATEGORIES, Ratings, DevelopmentPlan, Player, DOCUMENT_TYPES, PlayerPosition } from '@/types';
-import { StarRating } from '@/components/StarRating';
-import { ContractBadge } from '@/components/ContractBadge';
-import { NotesModule } from '@/components/NotesModule';
-import { EmailModule } from '@/components/EmailModule';
-import { TaskTimeline } from '@/components/TaskTimeline';
+import { getContractStatus, getAverageRatings, calculateOverallAverage, generateDevPlan, getRatingCategories, activityNameToKey, buildRatingsFromActivityRows } from '@/lib/playerUtils';
+import { NoteCategory, Ratings, DevelopmentPlan, Player, DOCUMENT_TYPES, PlayerPosition } from '@/types';
+import { StarRating } from '@/components';
+import { ContractBadge } from '@/components';
+import { NotesModule } from '@/components';
+import { EmailModule } from '@/components';
+import { TaskTimeline } from '@/components';
+import { AiPlanModule } from '@/components';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,7 @@ import { uploadPlayerImageApi } from '@/services/apiService';
 import { useAuth } from '@/context/AuthContext';
 import { isPlayerRole, isScoutRole } from '@/lib/accessPolicy';
 import { fetchContractsByPlayer } from '@/services/apiService';
-import type { CommercialContract } from '@/types';
+import type { CommercialContract, Sport } from '@/types';
 
 const PlayerProfile = () => {
   const { id } = useParams<{ id: string }>();
@@ -38,7 +39,7 @@ const PlayerProfile = () => {
   const isPlayer = isPlayerRole(user?.role);
   const isAdmin = user?.role === 'Admin';
   const isScout = isScoutRole(user?.role);
-  const { players, reviews, scouts, addReview, documents, addDocument, clubs, notes, updatePlayer, deletePlayer, loadDocuments, playerPositions } = useAppContext();
+  const { players, reviews, scouts, addReview, documents, addDocument, clubs, notes, updatePlayer, deletePlayer, loadDocuments, playerPositions, sports, sportActivities } = useAppContext();
 
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [searchParams] = useSearchParams();
@@ -210,13 +211,37 @@ const PlayerProfile = () => {
     const bTime = b.matchDate ? new Date(b.matchDate).getTime() : new Date(b.createdAt).getTime();
     return bTime - aTime;
   });
-  const avgRatings = getAverageRatings(playerReviews);
+  const avgRatings = getAverageRatings(playerReviews, sportActivities);
   const overallAvg = calculateOverallAverage(avgRatings);
   const contractStatus = getContractStatus(player);
 
+  const playerRatingCategories = useMemo(() => {
+    const playerActivities = sportActivities.filter(a => a.sportId === player.sportId);
+    return playerActivities.length > 0 ? getRatingCategories(playerActivities) : [];
+  }, [sportActivities, player.sportId]);
+
+  const playerRatingActivities = useMemo(() => {
+    const playerActivities = sportActivities.filter(a => a.sportId === player.sportId);
+    return playerActivities.map(a => ({
+      activityId: a.activityId ?? 0,
+      key: activityNameToKey(a.activityName),
+      label: a.activityName,
+    }));
+  }, [sportActivities, player.sportId]);
+
+  const playerSportScouts = useMemo(
+    () => scouts.filter(s => !s.sportId || s.sportId === player.sportId),
+    [scouts, player.sportId]
+  );
+
+  const playerSportPositions = useMemo(
+    () => playerPositions.filter(p => !p.sportId || p.sportId === player.sportId),
+    [playerPositions, player.sportId]
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div id="player-profile-header" className="flex items-center gap-4">
+      <div id="player-profile-header" className="flex flex-col md:flex-row items-start md:items-center gap-4">
         <Link to="/players"><Button variant="ghost" size="icon"><ArrowLeft size={18} /></Button></Link>
 
         {/* Player Profile Image */}
@@ -228,24 +253,23 @@ const PlayerProfile = () => {
           />
         </div>
 
-        <div className="flex-1">
-          <div className="flex flex-col justify-center h-20">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col justify-center">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold">{player.fullName}</h1>
+              <h1 className="text-2xl font-bold truncate">{player.fullName}</h1>
               <ContractBadge status={contractStatus} />
               <Badge variant="outline">{player.position}</Badge>
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {/* {player.currentClub} · {player.nationality} */}
-              {currentClub?.clubName || 'N/A'} · {player.nationality}
-              {assignedScout && <> · Coach: {assignedScout.scoutName}</>}
+            <p className="text-sm text-muted-foreground mt-1 flex flex-wrap gap-1">
+              <span className="truncate">{currentClub?.clubName || 'N/A'}</span>
+              <span className="hidden sm:inline">·</span>
+              <span className="truncate">{player.nationality}</span>
+              {assignedScout && <span className="truncate">· Coach: {assignedScout.scoutName}</span>}
             </p>
           </div>
         </div>
-        {/* <Button variant="outline" size="sm" className="no-print" onClick={() => window.print()}>
-          <Printer size={14} className="mr-1" /> Print
-        </Button> */}
-        <div className="flex justify-center gap-2 h-20 no-print">
+
+        <div className="flex flex-wrap justify-start md:justify-center gap-2 no-print">
 
           {isAdmin && (
             <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -301,11 +325,12 @@ const PlayerProfile = () => {
                   player={editPlayer}
                   onClose={() => setEditPlayer(null)}
                   onUpdate={updatePlayer}
-                  scouts={scouts}
+                  scouts={playerSportScouts}
                   clubs={clubs}
                   isScout={isScout}
                   isPlayer={isPlayer}
-                  playerPositions={playerPositions}
+                  playerPositions={playerSportPositions}
+                  sports={sports}
                 />
               )}
             </DialogContent>
@@ -353,26 +378,27 @@ const PlayerProfile = () => {
           {( !isPlayer || visiblePlayerDocumentCount > 0 ) && <TabsTrigger value="documents">Documents</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="tasks">Tasks</TabsTrigger>}
           {!isPlayer && <TabsTrigger value="emails">Email History</TabsTrigger>}
+          {!isPlayer && <TabsTrigger value="ai-plan">AI Development Plan</TabsTrigger>}
           <TabsTrigger value="commercial">Commercial ({commercialContracts.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent id="player-tab-overview" value="overview" className="mt-4">
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardHeader><CardTitle className="text-sm">Personal Details</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4 text-sm">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <InfoRow label="Date of Birth" value={format(new Date(player.dateOfBirth), 'MMM d, yyyy')} />
                 <InfoRow label="Nationality" value={player.nationality} />
                 <InfoRow label="Position" value={player.position} />
                 <InfoRow label="Preferred Foot" value={player.preferredFoot} />
                 <InfoRow label="Height" value={`${player.heightCm} cm`} />
                 <InfoRow label="Weight" value={`${player.weightKg} kg`} />
+                <InfoRow label="Sport" value={sports.find((a: any) => a.sportId === player.sportId)?.sportName  || 'N/A'} />
               </CardContent>
             </Card>
             <Card>
               <CardHeader><CardTitle className="text-sm">Contract & Agent</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4 text-sm">
-                {/* <InfoRow label="Current Club" value={player.currentClub} /> */}
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <InfoRow label="Current Club" value={currentClub?.clubName || 'N/A'} />
                 <InfoRow label="Contract Start" value={format(new Date(player.contractStart), 'MMM yyyy')} />
                 <InfoRow label="Contract End" value={format(new Date(player.contractEnd), 'MMM yyyy')} />
@@ -381,27 +407,50 @@ const PlayerProfile = () => {
                 <InfoRow label="Contact" value={player.contact_info || 'N/A'} />
               </CardContent>
             </Card>
-            {playerReviews.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm">Coach Contract</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <InfoRow 
+                  label="Contract Start with Coach" 
+                  value={player.contractStartWithCoach ? format(new Date(player.contractStartWithCoach), 'MMM yyyy') : 'N/A'} 
+                />
+                <InfoRow 
+                  label="Contract End with Coach" 
+                  value={player.contractEndWithCoach ? format(new Date(player.contractEndWithCoach), 'MMM yyyy') : 'N/A'} 
+                />
+              </CardContent>
+            </Card>
+            {playerReviews.length > 0 && playerRatingCategories.length > 0 && (
               <Card className="md:col-span-2">
                 <CardHeader><CardTitle className="text-sm">Average Ratings</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {RATING_CATEGORIES.map(cat => (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {playerRatingCategories.map(cat => (
                       <div key={cat.key} className="space-y-1">
                         <p className="text-xs text-muted-foreground">{cat.label}</p>
                         <div className="flex items-center gap-2">
-                          <StarRating value={Math.round(avgRatings[cat.key])} readonly size={14} />
-                          <span className="text-sm font-medium">{avgRatings[cat.key].toFixed(1)}</span>
+                          <StarRating value={Math.round((avgRatings as any)[cat.key] ?? 0)} readonly size={14} />
+                          <span className="text-sm font-medium">{((avgRatings as any)[cat.key] ?? 0).toFixed(1)}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                   <Separator className="my-4" />
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <span className="text-sm font-medium">Overall:</span>
-                    <StarRating value={Math.round(overallAvg)} readonly size={16} />
-                    <span className="text-lg font-bold text-primary">{overallAvg.toFixed(1)}</span>
+                    <div className="flex items-center gap-2">
+                      <StarRating value={Math.round(overallAvg)} readonly size={16} />
+                      <span className="text-lg font-bold text-primary">{overallAvg.toFixed(1)}</span>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+            {playerReviews.length > 0 && playerRatingCategories.length === 0 && (
+              <Card className="md:col-span-2">
+                <CardHeader><CardTitle className="text-sm">Average Ratings</CardTitle></CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">No sport-specific rating entity is configured for this player’s sport.</p>
                 </CardContent>
               </Card>
             )}
@@ -412,7 +461,7 @@ const PlayerProfile = () => {
           <TabsContent id="player-tab-reviews" value="reviews" className="mt-4 space-y-4">
             {canManagePlayerCrud && (
               <div className="flex justify-end">
-                <AddReviewDialog playerId={player.id} scouts={scouts} clubs={clubs} onAdd={addReview} />
+                <AddReviewDialog playerId={player.id} scouts={playerSportScouts} clubs={clubs} onAdd={addReview} ratingActivities={playerRatingActivities} />
               </div>
             )}
             {playerReviews.length === 0 ? (
@@ -438,23 +487,54 @@ const PlayerProfile = () => {
                             )}
                           </div>
                           <div className="flex items-center gap-1">
-                            <StarRating value={Math.round(calculateOverallAverage(review.revRatings))} readonly size={14} />
-                            <span className="text-sm font-bold">{calculateOverallAverage(review.revRatings).toFixed(1)}</span>
+                            {
+                              (() => {
+                                const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
+                                return (
+                                  <>
+                                    <StarRating value={Math.round(calculateOverallAverage(reviewRatings))} readonly size={14} />
+                                    <span className="text-sm font-bold">{calculateOverallAverage(reviewRatings).toFixed(1)}</span>
+                                  </>
+                                );
+                              })()
+                            }
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {RATING_CATEGORIES.map(cat => (
-                            <div key={cat.key}>
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-muted-foreground">{cat.label}</span>
-                                <StarRating value={review.revRatings[cat.key]} readonly size={10} />
+                        {
+                          (() => {
+                            const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
+                            const activityLookup = new Map<number, any>(
+                              (review.revRatingActivities ?? []).map(activity => [activity.activityId, activity])
+                            );
+
+                            return (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {playerRatingCategories.map(cat => {
+                                  const activity = sportActivities.find(a => a.sportId === player.sportId && activityNameToKey(a.activityName) === cat.key);
+                                  const activityRating = activity ? activityLookup.get(activity.activityId ?? 0) : undefined;
+                                  const ratingValue = activityRating ? Number(activityRating.rating) : ((reviewRatings as any)[cat.key] ?? 0);
+
+                                  return (
+                                    <div key={cat.key}>
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="text-muted-foreground">{cat.label}</span>
+                                        <StarRating value={ratingValue} readonly size={10} />
+                                      </div>
+                                      {activityRating?.comment && (
+                                        <p className="text-[10px] text-muted-foreground mt-0.5 italic">{activityRating.comment}</p>
+                                      )}
+                                      {activityRating?.ratingFollowupDate && (
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                                          Follow-up: {format(new Date(activityRating.ratingFollowupDate), 'MMM d, yyyy')}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                              {review.revSkillDetails?.[cat.key]?.comment && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5 italic">{review.revSkillDetails[cat.key].comment}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                            );
+                          })()
+                        }
                         {review.notes && <p className="text-sm text-muted-foreground mt-3 italic">"{review.notes}"</p>}
                       </CardContent>
                     </Card>
@@ -486,7 +566,7 @@ const PlayerProfile = () => {
         {( !isPlayer || visiblePlayerNoteCounts.performance > 0 ) && (
           <TabsContent id="player-tab-performance" value="performance" className="mt-4 space-y-6">
             <NotesModule entityType="player" entityId={player.id} filterCategory="performance" readOnly={!canManagePlayerCrud} />
-            {playerReviews.length > 0 && <DevPlanSection player={player} avgRatings={avgRatings} />}
+            {playerReviews.length > 0 && playerRatingCategories.length > 0 && <DevPlanSection player={player} avgRatings={avgRatings} ratingCategories={playerRatingCategories} />}
           </TabsContent>
         )}
 
@@ -498,9 +578,9 @@ const PlayerProfile = () => {
 
         {( !isPlayer || visiblePlayerDocumentCount > 0 ) && (
           <TabsContent id="player-tab-documents" value="documents" className="mt-4 space-y-4">
-            <div className="flex justify-end items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-3">
               <Select value={selectedDocType} onValueChange={setSelectedDocType}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="Filter by type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -511,7 +591,7 @@ const PlayerProfile = () => {
                 </SelectContent>
               </Select>
 
-              {canManagePlayerCrud && <DocumentDialog playerId={player.id} onUpload={addDocument} />}
+              {canManagePlayerCrud && <div className="w-full sm:w-auto"><DocumentDialog playerId={player.id} onUpload={addDocument} /></div>}
             </div>
 
             {visiblePlayerDocs.filter(d => selectedDocType === 'ALL' || d.documentType?.toLowerCase() === selectedDocType.toLowerCase()).length === 0 ? (
@@ -522,14 +602,14 @@ const PlayerProfile = () => {
                   .filter(d => selectedDocType === 'ALL' || d.documentType?.toLowerCase() === selectedDocType.toLowerCase())
                   .map(doc => (
                     <Card key={doc.documentId}>
-                      <CardContent className="p-3 flex items-center gap-3">
-                        <FileText size={18} className="text-primary" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">
+                      <CardContent className="p-3 flex flex-col md:flex-row md:items-center gap-3">
+                        <FileText size={18} className="text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium break-words">
                             <a
                               href={`data:application/octet-stream;base64,${doc.fileData}`}
                               download={doc.documentName}
-                              className="text-sm font-medium text-blue-600 hover:underline cursor-pointer"
+                              className="text-sm font-medium text-blue-600 hover:underline cursor-pointer break-words"
                             >
                               {doc.documentName}
                               <Download size={16} className="inline-block ml-2" />
@@ -539,7 +619,7 @@ const PlayerProfile = () => {
                             {doc.documentType} · {doc.fileSizeLabel} · {format(new Date(doc.documentDate), 'MMM d, yyyy')}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {canManagePlayerCrud && <DocumentDialog playerId={player.id} onUpload={addDocument} doc={doc} />}
                           {canManagePlayerCrud && <DeleteDocumentDialog doc={doc} />}
                         </div>
@@ -554,6 +634,12 @@ const PlayerProfile = () => {
         {!isPlayer && (
           <TabsContent id="player-tab-emails" value="emails" className="mt-4">
             <EmailModule entityType="player" entityId={player.id} readOnly={!canManagePlayerCrud} />
+          </TabsContent>
+        )}
+
+        {!isPlayer && (
+          <TabsContent id="player-tab-ai-plan" value="ai-plan" className="mt-4">
+            <AiPlanModule playerId={player.id} />
           </TabsContent>
         )}
 
@@ -607,7 +693,7 @@ const PlayerProfile = () => {
                                 {getDocumentLinks(contract.documentPath).map((doc) => (
                                   <a
                                     key={doc.path}
-                                    href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                                    href={`https://localhost:7001${doc.path}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     download={doc.fileName}
@@ -637,7 +723,7 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   <div><p className="text-muted-foreground">{label}</p><p className="font-medium">{value}</p></div>
 );
 
-const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string | number; scouts: any[]; clubs: any[]; onAdd: (r: any) => void }) => {
+const AddReviewDialog = ({ playerId, scouts, clubs, onAdd, ratingActivities }: { playerId: string | number; scouts: any[]; clubs: any[]; onAdd: (r: any) => void; ratingActivities: { activityId: number; key: string; label: string }[] }) => {
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
   const defaultScout = scouts.find(s => (s.email || '').trim().toLowerCase() === (user?.email || '').trim().toLowerCase());
@@ -647,10 +733,12 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
   const [club2Id, setClub2Id] = useState('');
   const [notes, setNotes] = useState('');
   const [isTraining, setIsTraining] = useState(false);
-  const [ratings, setRatings] = useState<Ratings>({
-    reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
-    defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
-  });
+  const [ratings, setRatings] = useState<Record<string, number>>(() =>
+    ratingActivities.reduce((acc, activity) => {
+      acc[activity.key] = 0;
+      return acc;
+    }, {} as Record<string, number>)
+  );
   const [skillDetails, setSkillDetails] = useState<Record<string, { comment: string; followUpDate: string }>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -662,14 +750,16 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
       setClub2Id('');
       setNotes('');
       setIsTraining(false);
-      setRatings({
-        reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
-        defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
-      });
+      setRatings(
+        ratingActivities.reduce((acc, activity) => {
+          acc[activity.key] = 0;
+          return acc;
+        }, {} as Record<string, number>)
+      );
       setSkillDetails({});
       setErrors({});
     }
-  }, [open]);
+  }, [open, ratingActivities]);
 
   // Validate club selection when training toggle changes
   useEffect(() => {
@@ -685,6 +775,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
   };
 
   const [submitting, setSubmitting] = useState(false);
+  const hasRatingCategories = ratingActivities.length > 0;
 
   const handleSubmit = async () => {
     const nextErrors: Record<string, string> = {};
@@ -697,6 +788,13 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
     // if (!club1Id.trim()) nextErrors.club1Id = 'Required field';
     // if (!club2Id.trim()) nextErrors.club2Id = 'Required field';
 
+    if (hasRatingCategories) {
+      const invalidRating = ratingActivities.some(activity => !(ratings[activity.key] >= 1 && ratings[activity.key] <= 5));
+      if (invalidRating) {
+        nextErrors.ratings = 'Please rate every sport activity between 1 and 5.';
+      }
+    }
+
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
@@ -706,12 +804,19 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
     Object.entries(skillDetails).forEach(([k, v]) => {
       if (v.comment || v.followUpDate) {
         details[k] = {
-          rating: ratings[k as keyof Ratings],
+          rating: ratings[k] ?? 0,
           comment: v.comment || undefined,
           followUpDate: v.followUpDate || undefined,
         };
       }
     });
+
+    const ratingRows = ratingActivities.map(activity => ({
+      activityId: activity.activityId,
+      rating: ratings[activity.key] ?? 0,
+      comment: skillDetails[activity.key]?.comment || undefined,
+      ratingFollowupDate: skillDetails[activity.key]?.followUpDate ? new Date(skillDetails[activity.key].followUpDate) : undefined,
+    }));
 
     setSubmitting(true);
     try {
@@ -722,17 +827,19 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
         matchDate,
         club1Id: club1Id || undefined,
         club2Id: club2Id || undefined,
-        revRatings: ratings,
+        ...(hasRatingCategories ? { revRatings: ratings, revRatingActivities: ratingRows } : {}),
         revSkillDetails: Object.keys(details).length > 0 ? details : undefined,
         notes,
         createdAt: new Date().toISOString(),
       });
       setOpen(false);
       setScoutId(''); setMatchDate(''); setClub1Id(''); setClub2Id(''); setNotes(''); setIsTraining(false);
-      setRatings({
-        reviewId: '', passing: 0, shooting: 0, dribbling: 0, tacticalAwareness: 0,
-        defensiveContribution: 0, physicalStrength: 0, behavior: 0, overallPerformance: 0, review: null,
-      });
+      setRatings(
+        ratingActivities.reduce((acc, activity) => {
+          acc[activity.key] = 0;
+          return acc;
+        }, {} as Record<string, number>)
+      );
       setSkillDetails({});
       setErrors({});
     } finally {
@@ -768,7 +875,7 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
             <Label htmlFor="training-mode">Training Review</Label>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Club 1</Label>
               <Select value={club1Id} onValueChange={value => { setClub1Id(value); setErrors(prev => ({ ...prev, club1Id: '' })); }}>
@@ -804,30 +911,35 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
           </div>
 
           <div className="space-y-3">
-            <Label>Ratings</Label>
-            {RATING_CATEGORIES.map(cat => (
-              <div key={cat.key} className="space-y-1 border-b border-border pb-2">
-                <div className="flex items-center justify-end">
-                  {/* <span className="text-sm">{cat.label}</span> */}
+                <Label>Ratings</Label>
+                {hasRatingCategories ? (
+                  ratingActivities.map(activity => (
+                    <div key={activity.key} className="space-y-1 border-b border-border pb-2">
+                      <div className="flex items-center justify-end">
+                    {/* <span className="text-sm">{activity.label}</span> */}
 
-                 <div className="flex items-center gap-9">
-                   {/* <Label className="text-xs">follow-up date</Label> */}
-                  <StarRating value={ratings[cat.key]} onChange={v => setRatings(prev => ({ ...prev, [cat.key]: v }))} size={18} />
-                 </div>
+                        <div className="flex items-center gap-9">
+                     {/* <Label className="text-xs">follow-up date</Label> */}
+                          <StarRating value={(ratings as any)[activity.key] ?? 0} onChange={v => setRatings(prev => ({ ...prev, [activity.key]: v }))} size={18} />
+                        </div>
 
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                 <div>
-                   <span className="text-sm">{cat.label}</span>
-                  <Input placeholder="Comment..." className="text-xs h-7" value={skillDetails[cat.key]?.comment || ''} onChange={e => updateSkillDetail(cat.key, 'comment', e.target.value)} />
-                 </div>
-                  <div>
-                    <span className="text-xs">Follow-up date</span>
-                    <Input type="date" className="text-xs h-7" placeholder="Follow-up" value={skillDetails[cat.key]?.followUpDate || ''} onChange={e => updateSkillDetail(cat.key, 'followUpDate', e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            ))}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-sm">{activity.label}</span>
+                          <Input placeholder="Comment..." className="text-xs h-7" value={skillDetails[activity.key]?.comment || ''} onChange={e => updateSkillDetail(activity.key, 'comment', e.target.value)} />
+                        </div>
+                        <div>
+                          <span className="text-xs">Follow-up date</span>
+                          <Input type="date" className="text-xs h-7" placeholder="Follow-up" value={skillDetails[activity.key]?.followUpDate || ''} onChange={e => updateSkillDetail(activity.key, 'followUpDate', e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-destructive">No rating entity is configured for this player's sport. Ratings cannot be recorded until sport-specific ratings are defined.</p>
+                )}
+                {errors.ratings && <p className="text-sm text-destructive">{errors.ratings}</p>}
           </div>
           <div><Label>Notes</Label><Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Match observations..." /></div>
           <Button onClick={handleSubmit} disabled={submitting} className="w-full">
@@ -839,14 +951,14 @@ const AddReviewDialog = ({ playerId, scouts, clubs, onAdd }: { playerId: string 
   );
 };
 
-const DevPlanSection = ({ player, avgRatings }: { player: any; avgRatings: Ratings }) => {
+const DevPlanSection = ({ player, avgRatings, ratingCategories }: { player: any; avgRatings: Ratings; ratingCategories: { key: string; label: string }[] }) => {
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="font-medium">AI Development Plan</h3>
-        <Button size="sm" onClick={() => setPlan(generateDevPlan(player, avgRatings))}>
+        <Button size="sm" onClick={() => setPlan(generateDevPlan(player, avgRatings, ratingCategories))}>
           <Brain size={14} className="mr-1" /> {plan ? 'Regenerate' : 'Generate Plan'}
         </Button>
       </div>
@@ -901,7 +1013,8 @@ const EditPlayerForm = ({
   clubs,
   isScout,
   isPlayer,
-  playerPositions
+  playerPositions,
+  sports
 }: {
   player: Player;
   onClose: () => void;
@@ -912,6 +1025,7 @@ const EditPlayerForm = ({
   isScout: boolean;
   isPlayer: boolean;
   playerPositions: PlayerPosition[];
+  sports: Sport[];
 }) => {
   const [imageFile, setImageFile] = useState<File | null>(null);
 
@@ -930,12 +1044,35 @@ const EditPlayerForm = ({
     agent_scout_id: player.agent_scout_id || '',
     contact_info: player.contact_info || '',
     profileImage: player.profileImage || '',
+    sportId: String(player.sportId || ''),
+    contractStartWithCoach: player.contractStartWithCoach || '',
+    contractEndWithCoach: player.contractEndWithCoach || '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const editFilteredPositions = useMemo(
+    () => form.sportId
+      ? playerPositions.filter(p => !p.sportId || String(p.sportId) === form.sportId)
+      : playerPositions,
+    [playerPositions, form.sportId]
+  );
+
+  const editFilteredScouts = useMemo(
+    () => form.sportId
+      ? scouts.filter(s => !s.sportId || String(s.sportId) === form.sportId)
+      : scouts,
+    [scouts, form.sportId]
+  );
+
   const update = (field: string, value: string) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === 'sportId') {
+        next.agent_scout_id = '';
+      }
+      return next;
+    });
     setErrors(prev => ({ ...prev, [field]: '' }));
   };
 
@@ -1012,9 +1149,12 @@ const EditPlayerForm = ({
       currentClub: form.currentClub,
       contractStart: form.contractStart || null,
       contractEnd: form.contractEnd || null,
+      contractStartWithCoach: form.contractStartWithCoach || null,
+      contractEndWithCoach: form.contractEndWithCoach || null,
       agentName: form.agentName,
       agent_scout_id: form.agent_scout_id || '',
       contact_info: form.contact_info,
+      sportId: form.sportId ? Number(form.sportId) : undefined,
       updatedAt: new Date().toISOString(),
     });
 
@@ -1048,7 +1188,8 @@ const EditPlayerForm = ({
     'currentClub',
     'contractStart',
     'contractEnd',
-    'agentName'
+    'agentName',
+    'sportId'
   ];
 
   const isFieldEditable = (field: string) => {
@@ -1119,7 +1260,21 @@ const EditPlayerForm = ({
         <Select value={form.position} onValueChange={v => update('position', v)} disabled={!isFieldEditable('position')}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}
+            {editFilteredPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label>Sport</Label>
+        <Select value={form.sportId} onValueChange={v => update('sportId', v)} disabled={!isFieldEditable('sportId')}>
+          <SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger>
+          <SelectContent>
+            {sports.map(s => (
+              <SelectItem key={s.sportId} value={String(s.sportId)}>
+                {s.sportName}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -1184,6 +1339,16 @@ const EditPlayerForm = ({
       </div>
 
       <div>
+        <Label>Contract Start with Coach</Label>
+        <Input type="date" value={form.contractStartWithCoach || ''} onChange={e => update('contractStartWithCoach', e.target.value)} disabled={!isFieldEditable('contractStartWithCoach')} />
+      </div>
+
+      <div>
+        <Label>Contract End with Coach</Label>
+        <Input type="date" value={form.contractEndWithCoach || ''} onChange={e => update('contractEndWithCoach', e.target.value)} disabled={!isFieldEditable('contractEndWithCoach')} />
+      </div>
+
+      <div>
         <Label>Agent Name</Label>
         <Input value={form.agentName} onChange={e => update('agentName', e.target.value)}  disabled={!isFieldEditable('agentName')} />
       </div>
@@ -1193,7 +1358,7 @@ const EditPlayerForm = ({
         <Select value={form.agent_scout_id} onValueChange={v => update('agent_scout_id', v)} /*disabled={!isFieldEditable('agent_scout_id')}*/>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            {scouts.map(s => (
+            {editFilteredScouts.map(s => (
               <SelectItem key={s.scoutId} value={s.scoutId}>
                 {s.scoutName}
               </SelectItem>
@@ -1226,7 +1391,7 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 const DeleteDocumentDialog = ({ doc }: { doc: any }) => {
-  const { deleteDocument } = useAppContext();
+  const { deleteDocument, sportActivities } = useAppContext();
   const [open, setOpen] = useState(false);
 
   const handleDelete = async () => {
@@ -1265,7 +1430,7 @@ const DocumentDialog = ({
   onUpload: (file: File, clubId?: string, playerId?: string, type?: string, isVisibleToPlayer?: boolean) => void;
   doc?: any;
 }) => {
-  const { updateDocument } = useAppContext();
+  const { updateDocument, sportActivities } = useAppContext();
   const { user } = useAuth();
   const isPlayerUser = isPlayerRole(user?.role);
   const isScoutUser = isScoutRole(user?.role);

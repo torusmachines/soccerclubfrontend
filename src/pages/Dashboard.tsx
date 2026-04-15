@@ -19,7 +19,7 @@ import { Task } from '@/types';
 
 
 const Dashboard = () => {
-  const { players, reviews, scouts, tasks, notes, emails, clubs, playerPositions } = useAppContext();
+  const { players, reviews, scouts, tasks, notes, emails, clubs, playerPositions, sportActivities } = useAppContext();
   const { user, loadUser, logout } = useAuth();
   const navigate = useNavigate();
   const [agentFilter, setAgentFilter] = useState('all');
@@ -193,7 +193,12 @@ const Dashboard = () => {
         )[0];
 
         // Calculate overall rating from all player reviews (same as player profile overall average)
-        const avgRatings = getAverageRatings(allPlayerReviews);
+        // const avgRatings = getAverageRatings(allPlayerReviews);
+        // const overallRating = calculateOverallAverage(avgRatings);
+
+        const playerActivities = sportActivities.filter(a => a.sportId === p.sportId);
+
+        const avgRatings = getAverageRatings(allPlayerReviews, playerActivities);
         const overallRating = calculateOverallAverage(avgRatings);
 
         const scout = scouts.find(s => s.scoutId === latestReview.scoutId);
@@ -371,7 +376,7 @@ const Dashboard = () => {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                       <span className="truncate max-w-full">
                         <span className="font-medium">Assigned By:</span>{" "}
-                        {assignedByScout?.scoutName || 'Unknown'}
+                        {assignedByScout?.scoutName || 'Auto-generated'}
                       </span>
 
                       <span className="hidden md:inline">•</span>
@@ -409,35 +414,6 @@ const Dashboard = () => {
               const club = clubs.find(c => String(c.clubId) === String(p.currentClub));
               const position = playerPositions.find(pos => pos.positionCode === p.position);
               return (
-                // <Link key={p.id} to={`/players/${p.id}`} className="block p-3 rounded-lg hover:bg-secondary transition-colors border">
-                //   <div className="flex items-start justify-between gap-2">
-                //     <div className="flex-1 min-w-0">
-                //       <div className="flex items-center gap-2 mb-1">
-                //         <p className="text-sm font-medium truncate">{p.fullName}</p>
-                //         <ContractBadge status={getContractStatus(p)} />
-                //       </div>
-                //       <div className="space-y-1 text-xs text-muted-foreground">
-                //         <div className="flex items-center gap-1">
-                //           <span className="font-medium">Club:</span>
-                //           <span>{p.currentClub || 'Unknown'}</span>
-                //         </div>
-                //         <div className="flex items-center gap-1">
-                //           <span className="font-medium">Scout:</span>
-                //           <span>{scout?.scoutName || 'Unknown'}</span>
-                //         </div>
-                //         <div className="flex items-center gap-1">
-                //           <span className="font-medium">Position:</span>
-                //           <span>{p.position}</span>
-                //         </div>
-                //         <div className="flex items-center gap-1">
-                //           <span className="font-medium">Contract ends:</span>
-                //           <span>{format(new Date(p.contractEnd), 'MMM d, yyyy')}</span>
-                //         </div>
-                //       </div>
-                //     </div>
-                //   </div>
-                // </Link>
-
                 <Link
                   key={p.id}
                   to={`/players/${p.id}`}
@@ -463,7 +439,7 @@ const Dashboard = () => {
                       <span className="hidden sm:inline">•</span>
 
                       <span className="truncate">
-                        <span className="font-medium">Coach:</span> {scout?.scoutName || 'Unknown'}
+                        <span className="font-medium">Coach:</span> {scout?.scoutName || 'Auto-generated'}
                       </span>
 
                       <span className="hidden sm:inline">•</span>
@@ -494,8 +470,8 @@ const Dashboard = () => {
           <CardContent className="space-y-3">
             {stats.recentNotes.map(n => {
               const entityName = n.playerId
-                ? players.find(p => String(p.id) === n.playerId)?.fullName || 'Unknown Player'
-                : clubs.find(c => c.clubId === n.clubId)?.clubName || 'Unknown Club';
+                ? players.find(p => String(p.id) === n.playerId)?.fullName || 'Auto-generated Note'
+                : clubs.find(c => c.clubId === n.clubId)?.clubName || 'Auto-generated Note';
               const entityUrl = n.playerId
                 ? `/players/${n.playerId}?tab=notes`
                 : `/clubs/${n.clubId}?tab=notes`;
@@ -544,7 +520,7 @@ const Dashboard = () => {
                       </Badge>
                     </div>
                   </div>
-                  
+
                   {/* Row 2: Position + Scout + Review Date */}
                   <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="truncate">
@@ -552,7 +528,7 @@ const Dashboard = () => {
                     </span>
                     <span className="hidden sm:inline">•</span>
                     <span className="truncate">
-                      <span className="font-medium">Reviewed By:</span> {item.scout?.scoutName || 'Unknown'}
+                      <span className="font-medium">Reviewed By:</span> {item.scout?.scoutName || 'Auto-generated'}
                     </span>
                     <span className="hidden sm:inline">•</span>
                     <span className="shrink-0">
@@ -574,7 +550,7 @@ const Dashboard = () => {
               const scout = scouts.find(s => String(s.scoutId) === String(r.scoutId));
               const position = playerPositions.find(p => p.positionCode === player?.position);
               const club = clubs.find(c => String(c.clubId) === String(player?.currentClub));
-              
+
               return (
                 <Link key={r.reviewId} to={`/players/${r.playerId}`} className="block">
                   <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors cursor-pointer">
@@ -634,7 +610,7 @@ const Dashboard = () => {
         task={selectedTask}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
+        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Auto-generated') : 'Auto-generated'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
         scouts={scouts}

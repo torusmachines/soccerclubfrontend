@@ -18,13 +18,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Search, Plus, MapPin, Loader2 } from 'lucide-react';
 
 const Players = () => {
-  const { players, reviews, addPlayer, scouts, clubs, playerPositions } = useAppContext();
+  const { players, reviews, addPlayer, scouts, clubs, playerPositions, sports } = useAppContext();
   const { user } = useAuth();
   const isPlayer = isPlayerRole(user?.role);
   const isScout = isScoutRole(user?.role);
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('all');
   const [scoutFilter, setScoutFilter] = useState('all');
+  const [sportFilter, setSportFilter] = useState('all');
 
   const visiblePlayers = players;
 
@@ -34,9 +35,10 @@ const Players = () => {
         (p.currentClub || '').toLowerCase().includes(search.toLowerCase()) ||
         (p.nationality || '').toLowerCase().includes(search.toLowerCase());
       const matchesPos = posFilter === 'all' || p.position === posFilter;
-      return matchesSearch && matchesPos;
+      const matchesSport = sportFilter === 'all' || String(p.sportId) === sportFilter;
+      return matchesSearch && matchesPos && matchesSport;
     });
-  }, [visiblePlayers, search, posFilter]);
+  }, [visiblePlayers, search, posFilter, sportFilter]);
 
   // find logged-in scout's own scout record by email match
   const ownScout = isScout
@@ -96,6 +98,13 @@ const Players = () => {
           <SelectContent>
             <SelectItem value="all">All Coaches</SelectItem>
             {scouts.map(s => <SelectItem key={s.scoutId} value={String(s.scoutId)}>{s.scoutName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={sportFilter} onValueChange={setSportFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sports</SelectItem>
+            {sports.map(s => <SelectItem key={s.sportId} value={String(s.sportId)}>{s.sportName}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -230,6 +239,7 @@ const AddPlayerDialog = ({
   playerPositions: PlayerPosition[];
 }) => {
   const { toast } = useToast();
+  const { sports } = useAppContext();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     fullName: '',
@@ -242,10 +252,13 @@ const AddPlayerDialog = ({
     currentClub: '',
     contractStart: '',
     contractEnd: '',
+    contractStartWithCoach: '',
+    contractEndWithCoach: '',
     agentName: '',
     agent_scout_id: '',
     contact_info: '',
     email: '',
+    sportId: '',
     profileImage: null as File | null,
     profileImagePreview: ''
   });
@@ -265,10 +278,13 @@ const AddPlayerDialog = ({
       currentClub: '',
       contractStart: '',
       contractEnd: '',
+      contractStartWithCoach: '',
+      contractEndWithCoach: '',
       agentName: '',
       agent_scout_id: '',
       contact_info: '',
       email: '',
+      sportId: '',
       profileImage: null,
       profileImagePreview: ''
     });
@@ -283,9 +299,30 @@ const AddPlayerDialog = ({
   }, [open]);
 
   const update = (field: string, value: any) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === 'sportId') {
+        next.position = 'CF';
+        next.agent_scout_id = '';
+      }
+      return next;
+    });
     setErrors(prev => ({ ...prev, [field]: '' }));
   };
+
+  const filteredPositions = useMemo(
+    () => form.sportId
+      ? playerPositions.filter(p => !p.sportId || String(p.sportId) === form.sportId)
+      : playerPositions,
+    [playerPositions, form.sportId]
+  );
+
+  const filteredScouts = useMemo(
+    () => form.sportId
+      ? scouts.filter(s => !s.sportId || String(s.sportId) === form.sportId)
+      : scouts,
+    [scouts, form.sportId]
+  );
 
   const handleSubmit = async () => {
     const nextErrors: Record<string, string> = {};
@@ -341,6 +378,8 @@ const AddPlayerDialog = ({
           currentClub: form.currentClub,
           contractStart: trimmedContractStart || null,
           contractEnd: trimmedContractEnd || null,
+          contractStartWithCoach: form.contractStartWithCoach || null,
+          contractEndWithCoach: form.contractEndWithCoach || null,
           agentName: form.agentName?.trim() || '',
           agent_scout_id: trimmedScoutId || 's1',
           contact_info: trimmedContactInfo,
@@ -349,7 +388,8 @@ const AddPlayerDialog = ({
           profileImage: undefined,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          player_email:trimmedEmail
+          player_email:trimmedEmail,
+          sportId: form.sportId ? Number(form.sportId) : undefined
         },
         form.profileImage
       );
@@ -389,10 +429,13 @@ const AddPlayerDialog = ({
         currentClub: '',
         contractStart: '',
         contractEnd: '',
+        contractStartWithCoach: '',
+        contractEndWithCoach: '',
         agentName: '',
         agent_scout_id: '',
         contact_info: '',
         email: '',
+        sportId: '',
         profileImage: null,
         profileImagePreview: ''
       });
@@ -494,7 +537,21 @@ const AddPlayerDialog = ({
             <Label>Position</Label>
             <Select value={form.position} onValueChange={v => update('position', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{playerPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}</SelectContent>
+              <SelectContent>{filteredPositions.map(p => <SelectItem key={p.positionId} value={p.positionCode}>{p.positionName}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Sport</Label>
+            <Select value={form.sportId} onValueChange={v => update('sportId', v)}>
+              <SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger>
+              <SelectContent>
+                {sports.map(s => (
+                  <SelectItem key={s.sportId} value={String(s.sportId)}>
+                    {s.sportName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
 
@@ -553,13 +610,23 @@ const AddPlayerDialog = ({
             {/* {errors.contractEnd ? <p className="text-xs text-destructive mt-1">{errors.contractEnd}</p> : null} */}
           </div>
 
+          <div>
+            <Label>Contract Start with Coach</Label>
+            <Input type="date" value={form.contractStartWithCoach} onChange={e => update('contractStartWithCoach', e.target.value)} />
+          </div>
+
+          <div>
+            <Label>Contract End with Coach</Label>
+            <Input type="date" value={form.contractEndWithCoach} onChange={e => update('contractEndWithCoach', e.target.value)} />
+          </div>
+
           <div><Label>Agent Name</Label><Input value={form.agentName} onChange={e => update('agentName', e.target.value)} /></div>
 
           <div>
             <Label>Assigned Coach <span className="text-red-500">*</span></Label>
             <Select value={form.agent_scout_id} onValueChange={v => update('agent_scout_id', v)}>
-              <SelectTrigger><SelectValue placeholder="Select Coach" /></SelectTrigger>
-              <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="Select coach" /></SelectTrigger>
+              <SelectContent>{filteredScouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
             </Select>
             {errors.agent_scout_id ? <p className="text-xs text-destructive mt-1">{errors.agent_scout_id}</p> : null}
           </div>

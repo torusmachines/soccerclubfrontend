@@ -133,6 +133,9 @@ export const AppLayout = () => {
               <div className="px-3 py-1">
                 <button onClick={() => { navigate('/settings/manage-positions'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Manage Positions</button>
               </div>
+              <div className="px-3 py-1">
+                <button onClick={() => { navigate('/settings/sports-management'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Sports Management</button>
+              </div>
             </div>
           )}
         </div>

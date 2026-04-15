@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PlayerProvider } from "@/context/PlayerContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { PrivateRoute } from "@/components/PrivateRoute";
@@ -23,7 +23,7 @@ import {Commercial} from "./pages/Commercial";
 import CompanyProfile from "./pages/Settings/CompanyProfile";
 import ManageRoles from "./pages/Settings/ManageRoles";
 import ManagePositions from "./pages/Settings/ManagePositions";
-import Login from "./pages/Login";
+import SportsManagement from "./pages/Settings/SportsManagement";import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import Unauthorized from "./pages/Unauthorized";
 import NotFound from "./pages/NotFound";
@@ -182,6 +182,14 @@ function RouterContent() {
             </AdminRoute>
           }
         />
+        <Route
+          path="settings/sports-management"
+          element={
+            <AdminRoute>
+              <SportsManagement />
+            </AdminRoute>
+          }
+        />
       </Route>
 
       {/* 404 */}
@@ -195,7 +203,7 @@ function RouterContent() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <HashRouter>
+      <BrowserRouter>
         <AuthProvider>
           <PlayerProvider>
             <Toaster />
@@ -203,7 +211,7 @@ const App = () => (
             <RouterContent />
           </PlayerProvider>
         </AuthProvider>
-      </HashRouter>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );

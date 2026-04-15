@@ -1,8 +1,8 @@
-import type { Scout, Club, ClubContact, Player, Review, Note, Task, Email, Template, ContactRole, PlayerPosition } from '@/types';
+import type { Scout, Club, ClubContact, Player, Review, Note, Task, Email, Template, ContactRole, PlayerPosition, ReviewActivityRating } from '@/types';
 
 import {
   fetchScouts, fetchClubs, fetchClubContacts, fetchContactRoles, fetchPlayerPositions, fetchPlayers,
-  fetchReviews, fetchNotes, fetchTasks, fetchEmails, fetchTemplates, fetchReviewRatings,
+  fetchReviews, fetchNotes, fetchTasks, fetchEmails, fetchTemplates, fetchReviewActivityRatings,
 } from '@/services/apiService';
 
 import {
@@ -153,11 +153,17 @@ export const loadMockData = async (): Promise<void> => {
   initialPlayers.push(...playersData)
   // initialReviews.push(...reviewsData.map(mapReview));
   initialReviews.push(...reviewsData);
-  const ratingsData = await fetchReviewRatings();
-  ratingsData.forEach(rating => {
-    const review = initialReviews.find(r => r.reviewId === rating.reviewId);
-    if (review) {
-      review.revRatings = rating;
+  const activityRatingsData = await fetchReviewActivityRatings();
+  const ratingsByReview = new Map<string, ReviewActivityRating[]>();
+  activityRatingsData.forEach(rating => {
+    const list = ratingsByReview.get(rating.reviewId) || [];
+    list.push(rating);
+    ratingsByReview.set(rating.reviewId, list);
+  });
+  initialReviews.forEach(review => {
+    const reviewRatings = ratingsByReview.get(review.reviewId);
+    if (reviewRatings?.length) {
+      review.revRatingActivities = reviewRatings;
     }
   });
   // initialNotes.push(...notesData.map(mapNote));

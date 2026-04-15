@@ -1,14 +1,18 @@
-import { Task } from '@/types';
+import { Task, TaskComment } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle, Circle, Calendar, Edit, Save, X } from 'lucide-react';
+import { CheckCircle, Circle, Calendar, Edit, Save, Trash2, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/context/AuthContext';
+import { fetchTaskComments, createTaskCommentApi, updateTaskCommentApi, deleteTaskCommentApi } from '@/services/apiService';
 
 interface TaskDetailsModalProps {
     task: Task | null;
@@ -31,21 +35,12 @@ const sourceColors: Record<string, string> = {
     manual: 'bg-gray-100 text-gray-800',
 };
 
-interface Comment {
-    id: string;
-    author: string;
-    role: string;
-    content: string;
-    timestamp: string;
-    avatar?: string;
-}
-
 export const TaskDetailsModal = ({
     task,
     isOpen,
     onClose,
-    assignedScoutName = 'Unknown Scout',
-    createdByName = 'Admin',
+    assignedScoutName = 'Auto-generated',
+    createdByName = 'System',
     getEntityName,
     onUpdateTask,
     scouts = [],
@@ -91,6 +86,96 @@ export const TaskDetailsModal = ({
         setIsEditing(false);
     };
 
+    const { user } = useAuth();
+    const [comments, setComments] = useState<TaskComment[]>([]);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingComments, setLoadingComments] = useState(false);
+    const [loadingMoreComments, setLoadingMoreComments] = useState(false);
+    const [commentDraft, setCommentDraft] = useState('');
+    const [commentVisibility, setCommentVisibility] = useState(true);
+    const [submittingComment, setSubmittingComment] = useState(false);
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingCommentText, setEditingCommentText] = useState('');
+    const [editingCommentVisibility, setEditingCommentVisibility] = useState(true);
+    const [commentError, setCommentError] = useState<string | null>(null);
+    const [autoScrollToBottom, setAutoScrollToBottom] = useState(false);
+    const commentsContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isOpen || !task) return;
+
+        setComments([]);
+        setPage(1);
+        setHasMore(true);
+        setCommentDraft('');
+        setCommentVisibility(true);
+        setEditingCommentId(null);
+        setEditingCommentText('');
+        setEditingCommentVisibility(true);
+        setCommentError(null);
+
+        loadComments(1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, task?.taskId]);
+
+    const sortCommentsAscending = (commentsToSort: TaskComment[]) =>
+        [...commentsToSort].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+
+    const loadComments = async (requestedPage: number) => {
+        if (!task) return;
+
+        if (requestedPage === 1) {
+            setLoadingComments(true);
+        } else {
+            setLoadingMoreComments(true);
+        }
+
+        try {
+            const pageSize = 20;
+            const pageComments = await fetchTaskComments(task.taskId, requestedPage, pageSize);
+            if (requestedPage === 1) {
+                setComments(sortCommentsAscending(pageComments));
+                setAutoScrollToBottom(true);
+            } else {
+                setComments(prev => sortCommentsAscending([...pageComments, ...prev]));
+            }
+            setHasMore(pageComments.length === pageSize);
+            setPage(requestedPage);
+        } catch (error) {
+            setCommentError('Unable to load comments. Please try again.');
+        } finally {
+            setLoadingComments(false);
+            setLoadingMoreComments(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!autoScrollToBottom || !commentsContainerRef.current) return;
+
+        commentsContainerRef.current.scrollTo({
+            top: commentsContainerRef.current.scrollHeight,
+            behavior: 'smooth',
+        });
+        setAutoScrollToBottom(false);
+    }, [autoScrollToBottom, comments]);
+
+    const loadNextPage = () => {
+        if (!hasMore || loadingMoreComments || loadingComments || !task) return;
+        loadComments(page + 1);
+    };
+
+    const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+        const target = event.currentTarget;
+        if (!hasMore || loadingMoreComments || loadingComments) return;
+
+        if (target.scrollTop < 120) {
+            loadNextPage();
+        }
+    };
+
     const handleCancel = () => {
         if (task) {
             setEditDueDate(task.dueDate);
@@ -100,33 +185,85 @@ export const TaskDetailsModal = ({
         }
         setIsEditing(false);
     };
-    // Static comments for demonstration
-    const staticComments: Comment[] = [
-        {
-            id: '1',
-            author: createdByName,
-            role: 'Task Creator',
-            content: 'This task needs to be completed by the end of the week. Please prioritize it.',
-            timestamp: format(new Date(Date.now() - 86400000), 'MMM d, yyyy \'at\' h:mm a'),
-            avatar: '👤',
-        },
-        {
-            id: '2',
-            author: assignedScoutName,
-            role: 'Assigned Scout',
-            content: 'Understood. I will start working on this task and provide an update by Wednesday.',
-            timestamp: format(new Date(Date.now() - 43200000), 'MMM d, yyyy \'at\' h:mm a'),
-            avatar: '👤',
-        },
-        {
-            id: '3',
-            author: createdByName,
-            role: 'Task Creator',
-            content: 'Great! Keep me updated on the progress.',
-            timestamp: format(new Date(Date.now() - 3600000), 'MMM d, yyyy \'at\' h:mm a'),
-            avatar: '👤',
-        },
-    ];
+
+    const handleAddComment = async () => {
+        if (!task || !commentDraft.trim() || !user) {
+            setCommentError('Type a comment before sending.');
+            return;
+        }
+
+        const draftText = commentDraft.trim();
+        const tempId = `temp-${Date.now()}`;
+        const optimisticComment: TaskComment = {
+            commentId: tempId,
+            taskId: task.taskId,
+            userId: user.id,
+            userName: user.fullName || user.name || 'You',
+            comment: draftText,
+            createdAt: new Date().toISOString(),
+            updatedAt: null,
+            isDeleted: false,
+            isVisibleToPlayer: commentVisibility
+        };
+
+        setComments(prev => [...prev, optimisticComment]);
+        setAutoScrollToBottom(true);
+        setCommentDraft('');
+        setSubmittingComment(true);
+        setCommentError(null);
+
+        try {
+            const created = await createTaskCommentApi(task.taskId, { comment: draftText, isVisibleToPlayer: commentVisibility });
+            setComments(prev => prev.map(item => item.commentId === tempId ? created : item));
+        } catch (error) {
+            setComments(prev => prev.filter(item => item.commentId !== tempId));
+            setCommentError('Unable to post comment. Please try again.');
+        } finally {
+            setSubmittingComment(false);
+        }
+    };
+
+    const startEditComment = (comment: TaskComment) => {
+        setEditingCommentId(comment.commentId);
+        setEditingCommentText(comment.comment);
+        setEditingCommentVisibility(comment.isVisibleToPlayer);
+    };
+
+    const cancelEditComment = () => {
+        setEditingCommentId(null);
+        setEditingCommentText('');
+    };
+
+    const saveCommentEdit = async () => {
+        if (!editingCommentId || !editingCommentText.trim()) {
+            setCommentError('Comment text cannot be empty.');
+            return;
+        }
+
+        setCommentError(null);
+
+        try {
+            const updated = await updateTaskCommentApi(editingCommentId, { comment: editingCommentText.trim(), isVisibleToPlayer: editingCommentVisibility });
+            setComments(prev => prev.map(item => item.commentId === editingCommentId ? updated : item));
+            cancelEditComment();
+        } catch (error) {
+            setCommentError('Unable to update comment. Please try again.');
+        }
+    };
+
+    const handleDeleteComment = async (commentId: string) => {
+        if (!window.confirm('Delete this comment?')) return;
+
+        const previousComments = comments;
+        setComments(prev => prev.filter(comment => comment.commentId !== commentId));
+
+        try {
+            await deleteTaskCommentApi(commentId);
+        } catch (error) {
+            setComments(previousComments);
+            setCommentError('Unable to delete comment. Please try again.');
+        }
+    };
 
     if (!task) return null;
 
@@ -149,7 +286,7 @@ export const TaskDetailsModal = ({
                                     </>
                                 ) : (
                                     // <div className='mt-5'>
-                                        <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} className="h-8">
+                                    <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} className="h-8">
                                         <Edit size={14} className="mr-1" /> Edit
                                     </Button>
                                     // </div>
@@ -258,7 +395,7 @@ export const TaskDetailsModal = ({
                                     </SelectContent>
                                 </Select>
                             ) : (
-                                <p className="text-sm mt-2">{assignedScoutName}</p>
+                                <p className="text-sm mt-2">{createdByName || assignedScoutName}</p>
                             )}
                         </div>
 
@@ -304,51 +441,251 @@ export const TaskDetailsModal = ({
                     <div className="space-y-4">
                         <h3 className="text-sm font-semibold">Comments</h3>
 
-                        <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
-                            {staticComments.map(comment => {
-                                const isCreator = comment.role === 'Task Creator';
+                        <div
+                            className="space-y-4 max-h-72 overflow-y-auto pr-1"
+                            onScroll={handleScroll}
+                            ref={commentsContainerRef}
+                        >
+                            {loadingComments && comments.length === 0 && (
+                                <div className="py-10 text-center text-sm text-muted-foreground">Loading comments…</div>
+                            )}
+
+                            {!loadingComments && comments.length === 0 && (
+                                <div className="py-10 text-center text-sm text-muted-foreground">No comments yet. Add the first comment below.</div>
+                            )}
+
+                            {comments
+                                .filter(comment => user?.role !== 'Player' || comment.isVisibleToPlayer)
+                                .map(comment => {
+                                const isAuthor = user && String(comment.userId) === String(user.id);
+                                const isEditingThis = editingCommentId === comment.commentId;
+                                const avatar = comment.userName
+                                    .split(' ')
+                                    .map(part => part[0])
+                                    .join('')
+                                    .slice(0, 2)
+                                    .toUpperCase() || 'U';
+
+                                // return (
+                                //     <Card key={comment.commentId}>
+                                //         <CardContent className="p-4">
+                                //             <div className="flex items-start gap-3">
+                                //                 <div className="h-9 w-9 flex items-center justify-center rounded-full bg-muted text-sm font-semibold">
+                                //                     {avatar}
+                                //                 </div>
+
+                                //                 <div className="flex-1">
+                                //                     <div className="flex flex-wrap items-start justify-between gap-3">
+                                //                         <div>
+                                //                             <p className="text-sm font-semibold">{comment.userName}</p>
+                                //                             <p className="text-xs text-muted-foreground">
+                                //                                 {format(new Date(comment.createdAt), 'MMM d, yyyy h:mm a')}
+                                //                             </p>
+                                //                         </div>
+                                //                         {isAuthor && !isEditingThis && (
+                                //                             <div className="flex items-center gap-2">
+                                //                                 <Button
+                                //                                     variant="ghost"
+                                //                                     size="icon"
+                                //                                     onClick={() => startEditComment(comment)}
+                                //                                 >
+                                //                                     <Edit size={14} />
+                                //                                 </Button>
+                                //                                 <Button
+                                //                                     variant="ghost"
+                                //                                     size="icon"
+                                //                                     onClick={() => handleDeleteComment(comment.commentId)}
+                                //                                 >
+                                //                                     <Trash2 size={14} />
+                                //                                 </Button>
+                                //                             </div>
+                                //                         )}
+                                //                     </div>
+
+                                //                     {isEditingThis ? (
+                                //                         <div className="space-y-3 mt-3">
+                                //                             <Textarea
+                                //                                 value={editingCommentText}
+                                //                                 onChange={(e) => setEditingCommentText(e.target.value)}
+                                //                                 className="min-h-[120px]"
+                                //                             />
+                                //                             <div className="flex gap-2 justify-end">
+                                //                                 <Button size="sm" onClick={saveCommentEdit} className="h-8">
+                                //                                     <Save size={14} className="mr-1" /> Save
+                                //                                 </Button>
+                                //                                 <Button size="sm" variant="outline" onClick={cancelEditComment} className="h-8">
+                                //                                     Cancel
+                                //                                 </Button>
+                                //                             </div>
+                                //                         </div>
+                                //                     ) : (
+                                //                         <p className="text-sm mt-3 whitespace-pre-wrap">{comment.comment}</p>
+                                //                     )}
+
+                                //                     {comment.updatedAt && comment.updatedAt !== comment.createdAt && (
+                                //                         <p className="text-xs text-muted-foreground mt-2">Edited</p>
+                                //                     )}
+                                //                 </div>
+                                //             </div>
+                                //         </CardContent>
+                                //     </Card>
+                                // );
 
                                 return (
-                                    <div
-                                        key={comment.id}
-                                        className={`flex items-start gap-3 ${isCreator ? 'flex-row-reverse' : ''}`}
-                                    >
-                                        {/* Avatar */}
-                                        <div className="h-9 w-9 flex items-center justify-center rounded-full bg-muted text-sm">
-                                            {comment.avatar}
-                                        </div>
-
-                                        {/* Message Bubble */}
-                                        <div className="max-w-[75%]">
+                                    <Card key={comment.commentId} className="border-none shadow-none bg-transparent">
+                                        <CardContent className="p-2">
                                             <div
-                                                className={`rounded-xl px-4 py-2 shadow-sm ${isCreator
-                                                        ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                                        : 'bg-muted rounded-tl-none'
+                                                className={`flex items-start gap-3 group ${isAuthor ? "flex-row-reverse" : ""
                                                     }`}
                                             >
-                                                <p className="text-sm">{comment.content}</p>
-                                            </div>
+                                                {/* Avatar */}
+                                                <div className="h-8 w-8 flex items-center justify-center rounded-full bg-muted text-xs font-semibold shrink-0">
+                                                    {avatar}
+                                                </div>
 
-                                            {/* Meta Info */}
-                                            <div
-                                                className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground ${isCreator ? 'justify-end' : 'justify-start'
-                                                    }`}
-                                            >
-                                                <span className="font-medium">{comment.author}</span>
-                                                <span>•</span>
-                                                <span>{comment.timestamp}</span>
+                                                {/* Content */}
+                                                <div className="max-w-[75%]">
+
+                                                    {/* Bubble */}
+                                                    <div
+                                                        className={`rounded-xl px-3 py-2 shadow-sm relative ${isAuthor
+                                                                ? "bg-primary text-primary-foreground rounded-tr-none"
+                                                                : "bg-muted rounded-tl-none"
+                                                            }`}
+                                                    >
+                                                        {/* Edit Mode */}
+                                                        {isEditingThis ? (
+                                                            <div className="space-y-2">
+                                                                <Textarea
+                                                                    value={editingCommentText}
+                                                                    onChange={(e) => setEditingCommentText(e.target.value)}
+                                                                    className="min-h-[80px] text-sm"
+                                                                />
+                                                                {user && user.role !== 'Player' && (
+                                                                    <div className="flex items-center space-x-2">
+                                                                        <Switch
+                                                                            id={`edit-visibility-${comment.commentId}`}
+                                                                            checked={editingCommentVisibility}
+                                                                            onCheckedChange={(checked) => setEditingCommentVisibility(checked as boolean)}
+                                                                        />
+                                                                        <Label htmlFor={`edit-visibility-${comment.commentId}`} className="text-xs">
+                                                                            Visible to players
+                                                                        </Label>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex justify-end gap-2">
+                                                                    <Button size="sm" onClick={saveCommentEdit} className="h-7 px-2">
+                                                                        <Save size={13} className="mr-1" /> Save
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        onClick={cancelEditComment}
+                                                                        className="h-7 px-2"
+                                                                    >
+                                                                        Cancel
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                                                                {comment.comment}
+                                                            </p>
+                                                        )}
+
+                                                        {/* Actions */}
+                                                        {isAuthor && !isEditingThis && (
+                                                            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-6 w-6"
+                                                                    onClick={() => startEditComment(comment)}
+                                                                >
+                                                                    <Edit size={12} />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-6 w-6 text-destructive"
+                                                                    onClick={() => handleDeleteComment(comment.commentId)}
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Meta Info */}
+                                                    <div
+                                                        className={`flex items-center gap-2 mt-1 text-[11px] text-muted-foreground ${isAuthor ? "justify-end" : "justify-start"
+                                                            }`}
+                                                    >
+                                                        <span className="font-medium">{comment.userName}</span>
+                                                        <span>•</span>
+                                                        <span>
+                                                            {format(new Date(comment.createdAt), "MMM d, yyyy h:mm a")}
+                                                        </span>
+                                                        {comment.updatedAt &&
+                                                            comment.updatedAt !== comment.createdAt && (
+                                                                <>
+                                                                    <span>•</span>
+                                                                    <span>edited</span>
+                                                                </>
+                                                            )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
+                                        </CardContent>
+                                    </Card>
                                 );
+
                             })}
+
+                            {loadingMoreComments && (
+                                <div className="py-3 text-center text-sm text-muted-foreground">Loading more comments…</div>
+                            )}
+
+                            {!hasMore && comments.length > 0 && (
+                                <div className="py-3 text-center text-xs text-muted-foreground">No more comments</div>
+                            )}
                         </div>
 
-                        {/* Add Comment Placeholder */}
-                        <div className="border-t pt-3">
-                            <div className="bg-muted rounded-lg px-3 py-2 text-xs text-muted-foreground italic">
-                                Comment functionality will be added in future updates
-                            </div>
+                        <div className="border-t pt-3 space-y-3">
+                            {commentError && <p className="text-sm text-destructive">{commentError}</p>}
+                            
+                            {/* Only show comment input for admins and scouts */}
+                            {user && user.role !== 'Player' && (
+                                <>
+                                    <Textarea
+                                        value={commentDraft}
+                                        onChange={(e) => setCommentDraft(e.target.value)}
+                                        placeholder="Write a comment..."
+                                        className="min-h-[100px]"
+                                    />
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="comment-visibility"
+                                            checked={commentVisibility}
+                                            onCheckedChange={(checked) => setCommentVisibility(checked as boolean)}
+                                        />
+                                        <Label htmlFor="comment-visibility" className="text-sm">
+                                            Visible to players
+                                        </Label>
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <p className="text-xs text-muted-foreground">Comments load in pages of 20 and are filtered by task only.</p>
+                                        <Button size="sm" onClick={handleAddComment} disabled={submittingComment || !commentDraft.trim()}>
+                                            Send
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+                            
+                            {/* Show message for players */}
+                            {user && user.role === 'Player' && (
+                                <p className="text-sm text-muted-foreground italic">Comments are managed by your scout or admin.</p>
+                            )}
                         </div>
                     </div>
 

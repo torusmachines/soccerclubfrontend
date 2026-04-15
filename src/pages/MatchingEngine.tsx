@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { usePlayerContext } from '@/context/PlayerContext';
-import { matchPlayers } from '@/lib/playerUtils';
-import { MatchCriteria, RATING_CATEGORIES } from '@/types';
+import { matchPlayers, getRatingCategories } from '@/lib/playerUtils';
+import { MatchCriteria } from '@/types';
 import { StarRating } from '@/components/StarRating';
 import { ContractBadge } from '@/components/ContractBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { Target, RotateCcw, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 const MatchingEngine = () => {
-  const { players, reviews, playerPositions } = usePlayerContext();
+  const { players, reviews, playerPositions, sportActivities } = usePlayerContext();
   const [criteria, setCriteria] = useState<MatchCriteria>({});
   const [hasSearched, setHasSearched] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -40,6 +40,8 @@ const MatchingEngine = () => {
 
   // Draws a single player card onto the PDF at position y, returns the new y
   const drawPlayerCard = (pdf: jsPDF, result: any, y: number, margin: number, contentWidth: number): number => {
+    const playerActivities = sportActivities.filter(a => a.sportId === result.player.sportId);
+    const ratingCategories = getRatingCategories(playerActivities);
     const cardHeight = 36;
     const x = margin;
 
@@ -97,7 +99,7 @@ const MatchingEngine = () => {
     pdf.line(x + 4, y + 19, x + contentWidth - 4, y + 19);
 
     // ── Rating categories ──
-    const cats = RATING_CATEGORIES.slice(0, 4);
+    const cats = ratingCategories.slice(0, 4);
     const colW = contentWidth / 4;
     cats.forEach((cat, i) => {
       const cx = x + colW * i + colW / 2;
@@ -259,36 +261,39 @@ const MatchingEngine = () => {
                 )}
               </div>
 
-              {/* Visible result cards */}
-              {results.map(result => (
-                <Link key={result.player.id} to={`/players/${result.player.id}`}>
-                  <Card className="hover:border-primary/30 transition-all cursor-pointer mb-3">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <h3 className="font-semibold">{result.player.fullName}</h3>
-                          <p className="text-xs text-muted-foreground">{result.player.currentClub} · {result.player.position} · {result.player.preferredFoot} foot</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <ContractBadge status={result.contractStatus} />
-                          <div className="text-right">
-                            <p className="text-2xl font-bold text-primary">{result.matchScore}%</p>
-                            <p className="text-[10px] text-muted-foreground">match</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-4 gap-2 mt-3">
-                        {RATING_CATEGORIES.slice(0, 4).map(cat => (
-                          <div key={cat.key} className="text-center">
-                            <p className="text-[10px] text-muted-foreground">{cat.label}</p>
-                            <p className="text-sm font-medium">{result.averageRatings[cat.key].toFixed(1)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
+                        {results.map(result => {
+                        const playerActivities = sportActivities.filter(a => a.sportId === result.player.sportId);
+                        const playerRatingCategories = getRatingCategories(playerActivities);
+                        return (
+                        <Link key={result.player.id} to={`/players/${result.player.id}`}>
+                          <Card className="hover:border-primary/30 transition-all cursor-pointer mb-3">
+                            <CardContent className="p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <h3 className="font-semibold">{result.player.fullName}</h3>
+                                  <p className="text-xs text-muted-foreground">{result.player.currentClub} · {result.player.position} · {result.player.preferredFoot} foot</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <ContractBadge status={result.contractStatus} />
+                                  <div className="text-right">
+                                    <p className="text-2xl font-bold text-primary">{result.matchScore}%</p>
+                                    <p className="text-[10px] text-muted-foreground">match</p>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2 mt-3">
+                                {playerRatingCategories.slice(0, 4).map(cat => (
+                                  <div key={cat.key} className="text-center">
+                                    <p className="text-[10px] text-muted-foreground">{cat.label}</p>
+                                    <p className="text-sm font-medium">{((result.averageRatings as any)[cat.key] ?? 0).toFixed(1)}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </Link>
+                        );
+                        })}
               {results.length === 0 && (
                 <p className="text-center text-muted-foreground py-8">No players match your criteria</p>
               )}

@@ -20,6 +20,10 @@ export interface Player {
   contact_info?: string,
   profileImage?: string; // base64 or URL
   player_email:string;
+  sportId?: number;
+  sportName?: string;
+  contractStartWithCoach?: string;
+  contractEndWithCoach?: string;
 }
 
 export interface Scout {
@@ -38,6 +42,7 @@ export interface Scout {
   country?: string;
   lockedAreas?: string;
   isShowPlayer?: boolean;
+  sportId?: number;
   createdAt: string;
 }
 
@@ -52,6 +57,17 @@ export interface Ratings {
   behavior: number;
   overallPerformance: number;
   review: null;
+}
+
+export interface ReviewActivityRating {
+  reviewActivityRatingId?: number;
+  reviewId: string;
+  activityId: number;
+  rating: number;
+  comment?: string;
+  ratingFollowupDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SkillDetail {
@@ -85,6 +101,7 @@ export interface Review {
   // Lovable UI specific fields (not returned from API)
   revRatings?: Ratings;
   revSkillDetails?: Record<string, SkillDetail>;
+  revRatingActivities?: ReviewActivityRating[];
 }
 
 // export interface PlayerDocument {
@@ -236,6 +253,18 @@ export interface Task {
   player?: string | Player | null;
 }
 
+export interface TaskComment {
+  commentId: string;
+  taskId: string;
+  userId: string;
+  userName: string;
+  comment: string;
+  createdAt: string;
+  updatedAt?: string | null;
+  isDeleted: boolean;
+  isVisibleToPlayer: boolean;
+}
+
 // Email types
 // export interface Email {
 //   id: string;
@@ -318,6 +347,7 @@ export interface PlayerPosition {
   positionCode: string;
   positionName: string;
   description?: string;
+  sportId?: number;
   createdAt: string;
   createdBy: string;
 }
@@ -350,6 +380,52 @@ export interface CommercialContract {
   sponsor?: Sponsor;
 }
 
+export interface AiPlanContent {
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  trend_analysis: string;
+  injury_risks: string[];
+  improvements_from_last_plan: string[];
+  timeline_weeks: Record<string, string>;
+  skill_plan: Record<string, string[]>;
+  weekly_schedule: Record<string, string[]>;
+  performance_tracking: string[];
+  recommendations: string[];
+}
+
+export interface AiPlanResponse {
+  planId: string;
+  playerId: string;
+  plan: AiPlanContent;
+  version: number;
+  createdAt: string;
+  skillType?: string;
+  currentLevel?: string;
+  targetLevel?: string;
+  durationWeeks?: number;
+  trainingDaysPerWeek?: number;
+  sessionDurationMinutes?: number;
+  hasInjury?: boolean;
+  injuryDetails?: string;
+  pdfPath?: string;
+}
+
+export interface AiPlanHistoryResponse {
+  plans: AiPlanResponse[];
+}
+
+export interface AiPlanGeneratePayload {
+  skillType: string;
+  currentLevel: 'Beginner' | 'Intermediate' | 'Advanced';
+  targetLevel: 'Beginner' | 'Intermediate' | 'Advanced';
+  durationWeeks: number;
+  trainingDaysPerWeek: number;
+  sessionDurationMinutes: number;
+  hasInjury: boolean;
+  injuryDetails?: string;
+}
+
 export const CLUB_CONTACT_ROLES = ['Coach', 'Technical Director', 'Commercial Manager', 'Scout'];
 
 export const TEMPLATE_VARIABLES = [
@@ -361,3 +437,17 @@ export const DOCUMENT_TYPES = [
   "Development Plans",
   "Letters",
 ];
+
+export interface Sport {
+  sportId?: number;
+  sportName: string;
+  createdAt?: string;
+}
+
+export interface SportActivity {
+  activityId?: number;
+  sportId: number;
+  activityName: string;
+  createdAt?: string;
+  sport?: Sport;
+}

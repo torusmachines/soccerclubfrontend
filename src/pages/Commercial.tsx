@@ -403,58 +403,110 @@ export const Commercial = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Company Name</TableHead>
-                <TableHead>Contact Name</TableHead>
-                <TableHead>Contact Email</TableHead>
-                <TableHead>Contact Phone</TableHead>
-                <TableHead>Address</TableHead>
-                <TableHead>Notes</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sponsors.map((sponsor) => (
-                <TableRow key={sponsor.id}>
-                  <TableCell>{sponsor.companyName}</TableCell>
-                  <TableCell>{sponsor.contactName || '-'}</TableCell>
-                  <TableCell>{sponsor.contactEmail || '-'}</TableCell>
-                  <TableCell>{sponsor.contactPhone || '-'}</TableCell>
-                  <TableCell className="max-w-xs truncate">{sponsor.address || '-'}</TableCell>
-                  <TableCell className="max-w-xs truncate">{sponsor.notes || '-'}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingSponsor(sponsor);
-                        setSponsorForm({
-                          companyName: sponsor.companyName,
-                          contactName: sponsor.contactName || '',
-                          contactEmail: sponsor.contactEmail || '',
-                          contactPhone: sponsor.contactPhone || '',
-                          address: sponsor.address || '',
-                          notes: sponsor.notes || '',
-                        });
-                        setSponsorDialogOpen(true);
-                      }}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteSponsor(sponsor.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company Name</TableHead>
+                  <TableHead>Contact Name</TableHead>
+                  <TableHead>Contact Email</TableHead>
+                  <TableHead>Contact Phone</TableHead>
+                  <TableHead>Address</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {sponsors.map((sponsor) => (
+                  <TableRow key={sponsor.id}>
+                    <TableCell>{sponsor.companyName}</TableCell>
+                    <TableCell>{sponsor.contactName || '-'}</TableCell>
+                    <TableCell>{sponsor.contactEmail || '-'}</TableCell>
+                    <TableCell>{sponsor.contactPhone || '-'}</TableCell>
+                    <TableCell className="max-w-xs truncate">{sponsor.address || '-'}</TableCell>
+                    <TableCell className="max-w-xs truncate">{sponsor.notes || '-'}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingSponsor(sponsor);
+                          setSponsorForm({
+                            companyName: sponsor.companyName,
+                            contactName: sponsor.contactName || '',
+                            contactEmail: sponsor.contactEmail || '',
+                            contactPhone: sponsor.contactPhone || '',
+                            address: sponsor.address || '',
+                            notes: sponsor.notes || '',
+                          });
+                          setSponsorDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteSponsor(sponsor.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="space-y-4 sm:hidden">
+            {sponsors.map((sponsor) => (
+              <Card key={sponsor.id} className="border border-border pt-5">
+                <CardContent className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{sponsor.companyName}</p>
+                      <div className="text-xs text-muted-foreground">
+                        {sponsor.contactName || '-'}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingSponsor(sponsor);
+                          setSponsorForm({
+                            companyName: sponsor.companyName,
+                            contactName: sponsor.contactName || '',
+                            contactEmail: sponsor.contactEmail || '',
+                            contactPhone: sponsor.contactPhone || '',
+                            address: sponsor.address || '',
+                            notes: sponsor.notes || '',
+                          });
+                          setSponsorDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteSponsor(sponsor.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    <div><span className="font-medium">Email:</span> {sponsor.contactEmail || '-'}</div>
+                    <div><span className="font-medium">Phone:</span> {sponsor.contactPhone || '-'}</div>
+                    <div><span className="font-medium">Address:</span> {sponsor.address || '-'}</div>
+                    <div><span className="font-medium">Notes:</span> {sponsor.notes || '-'}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </CardContent>
       </Card>
         </TabsContent>
@@ -625,7 +677,7 @@ export const Commercial = () => {
                             {getDocumentLinks(editingContract.documentPath).map((doc) => (
                               <li key={doc.path} className="flex items-center justify-between gap-4 rounded-md bg-background px-3 py-2">
                                 <a
-                                  href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                                  href={`https://localhost:7001${doc.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   download={doc.fileName}
@@ -653,60 +705,153 @@ export const Commercial = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Sponsor</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead>Start Date</TableHead>
-                <TableHead>End Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Documents</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContracts.map((contract) => (
-                <TableRow key={contract.id} className="transition-colors hover:bg-muted/20">
-                  <TableCell>{contract.sponsor?.companyName || 'Unknown Sponsor'}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${contract.entityType === 'club' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
-                        {contract.entityType === 'club' ? 'Club' : 'Player'}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{getEntityName(contract)}</p>
-                        <p className="truncate text-xs text-muted-foreground">{contract.entityType === 'club' ? 'Club contract' : 'Player contract'}</p>
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Sponsor</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>End Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Documents</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredContracts.map((contract) => (
+                  <TableRow key={contract.id} className="transition-colors hover:bg-muted/20">
+                    <TableCell>{contract.sponsor?.companyName || 'Unknown Sponsor'}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${contract.entityType === 'club' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                          {contract.entityType === 'club' ? 'Club' : 'Player'}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">{getEntityName(contract)}</p>
+                          <p className="truncate text-xs text-muted-foreground">{contract.entityType === 'club' ? 'Club contract' : 'Player contract'}</p>
+                        </div>
                       </div>
+                    </TableCell>
+                    <TableCell>{new Date(contract.contractStartDate).toLocaleDateString()}</TableCell>
+                    <TableCell>{new Date(contract.contractEndDate).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <Badge variant={new Date(contract.contractEndDate) > new Date() ? 'default' : 'destructive'}>
+                        {new Date(contract.contractEndDate) > new Date() ? 'Active' : 'Expired'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {getDocumentLinks(contract.documentPath).map((doc, index) => (
+                          <a
+                            key={index}
+                            href={`https://localhost:7001${doc.path}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            <Download className="w-3 h-3" />
+                            {doc.fileName}
+                          </a>
+                        ))}
+                        {(!contract.documentPath || getDocumentLinks(contract.documentPath).length === 0) && (
+                          <span className="text-xs text-muted-foreground">No documents</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingContract(contract);
+                          setContractForm({
+                            sponsorId: contract.sponsorId,
+                            entityType: contract.entityType,
+                            clubId: contract.clubId || '',
+                            playerId: contract.playerId || '',
+                            contractStartDate: contract.contractStartDate.split('T')[0],
+                            contractEndDate: contract.contractEndDate.split('T')[0],
+                            contractDetails: contract.contractDetails || '',
+                            documentPath: contract.documentPath || '',
+                          });
+                          setUploadedFiles([]);
+                          setContractDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteContract(contract.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          className="hidden"
+                          multiple
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length > 0) {
+                              handleDocumentUpload(contract.id, files);
+                            }
+                          }}
+                          accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                        />
+                        <Button variant="ghost" size="sm" asChild>
+                          <span><Upload className="w-4 h-4" /></span>
+                        </Button>
+                      </label>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="space-y-4 sm:hidden">
+            {filteredContracts.map((contract) => (
+              <Card key={contract.id} className="border border-border pt-5">
+                <CardContent className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{contract.sponsor?.companyName || 'Unknown Sponsor'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{getEntityName(contract)}</p>
                     </div>
-                  </TableCell>
-                  <TableCell>{new Date(contract.contractStartDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(contract.contractEndDate).toLocaleDateString()}</TableCell>
-                  <TableCell>
                     <Badge variant={new Date(contract.contractEndDate) > new Date() ? 'default' : 'destructive'}>
                       {new Date(contract.contractEndDate) > new Date() ? 'Active' : 'Expired'}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {getDocumentLinks(contract.documentPath).map((doc, index) => (
-                        <a
-                          key={index}
-                          href={`https://soccerclubbackend.onrender.com${doc.path}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          <Download className="w-3 h-3" />
-                          {doc.fileName}
-                        </a>
-                      ))}
-                      {(!contract.documentPath || getDocumentLinks(contract.documentPath).length === 0) && (
-                        <span className="text-xs text-muted-foreground">No documents</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    <div><span className="font-medium">Entity Type:</span> {contract.entityType === 'club' ? 'Club' : 'Player'}</div>
+                    <div><span className="font-medium">Start:</span> {new Date(contract.contractStartDate).toLocaleDateString()}</div>
+                    <div><span className="font-medium">End:</span> {new Date(contract.contractEndDate).toLocaleDateString()}</div>
+                    <div className="space-y-1">
+                      <span className="font-medium">Documents:</span>
+                      {getDocumentLinks(contract.documentPath).length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {getDocumentLinks(contract.documentPath).map((doc, index) => (
+                            <a
+                              key={index}
+                              href={`https://localhost:7001${doc.path}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <Download className="w-3 h-3 inline-block mr-1" />
+                              {doc.fileName}
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No documents</p>
                       )}
                     </div>
-                  </TableCell>
-                  <TableCell>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -752,11 +897,11 @@ export const Commercial = () => {
                         <span><Upload className="w-4 h-4" /></span>
                       </Button>
                     </label>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </CardContent>
       </Card>
         </TabsContent>

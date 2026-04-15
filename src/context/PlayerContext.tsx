@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
-import { Player, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template, ContactRole, PlayerPosition } from '@/types';
+import { Player, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template, ContactRole, PlayerPosition, Sport, SportActivity } from '@/types';
 import {
   createClub, updateClubApi, deleteClubApi, uploadClubLogoApi, fetchTemplates,
   createClubContactApi, updateClubContactApi, deleteClubContactApi,
   createContactRoleApi, updateContactRoleApi, deleteContactRoleApi,
   fetchPlayerPositions, createPlayerPositionApi, updatePlayerPositionApi, deletePlayerPositionApi,
+  fetchSportsApi, createSportApi, updateSportApi, deleteSportApi,
+  fetchSportActivitiesApi, createSportActivityApi, updateSportActivityApi, deleteSportActivityApi,
   createTemplateApi,
   updateTemplateApi,
   deleteTemplateApi, createPlayerApi,
   createTaskApi,
   updatePlayerApi,
-  deletePlayerApi, createReviewApi, createReviewRatingApi,
+  deletePlayerApi, createReviewApi, createReviewRatingApi, createReviewActivityRatingsApi, createReviewSkillDetailApi,
   createNoteApi, updateNoteApi, deleteNoteApi,
   updateTaskApi, deleteTaskApi,
   updateEmailApi,
@@ -33,7 +35,7 @@ import {
 import { addMonths, differenceInDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
-import { getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
+import { getAverageRatings, calculateOverallAverage, buildRatingsFromActivityRows } from '@/lib/playerUtils';
 import { getContractExpiringMonths } from '@/lib/settingsUtils';
 
 interface AppContextType {
@@ -45,6 +47,8 @@ interface AppContextType {
   clubContacts: ClubContact[];
   contactRoles: ContactRole[];
   playerPositions: PlayerPosition[];
+  sports: Sport[];
+  sportActivities: SportActivity[];
   notes: Note[];
   tasks: Task[];
   emails: Email[];
@@ -85,6 +89,12 @@ interface AppContextType {
   addPlayerPosition: (p: PlayerPosition) => Promise<void>;
   updatePlayerPosition: (p: PlayerPosition) => Promise<void>;
   deletePlayerPosition: (id: string) => Promise<void>;
+  addSport: (s: Sport) => Promise<void>;
+  updateSport: (s: Sport) => Promise<void>;
+  deleteSport: (id: number) => Promise<void>;
+  addSportActivity: (sa: SportActivity) => Promise<void>;
+  updateSportActivity: (sa: SportActivity) => Promise<void>;
+  deleteSportActivity: (id: number) => Promise<void>;
   loadDocuments: () => Promise<void>;
 }
 
@@ -117,6 +127,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   const [clubContacts, setClubContacts] = useState<ClubContact[]>(initialClubContacts);
   const [contactRoles, setContactRoles] = useState<ContactRole[]>(initialContactRoles);
   const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>(initialPlayerPositions);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [sportActivities, setSportActivities] = useState<SportActivity[]>([]);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [emails, setEmails] = useState<Email[]>(initialEmails);
@@ -316,10 +328,53 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     loadScouts();
   }, []);
 
+  useEffect(() => {
+    const loadSports = async () => {
+      try {
+        const sportsData = await fetchSportsApi();
+        setSports(sportsData);
+      } catch (err) {
+        console.error("Failed to load sports", err);
+      }
+    };
+    const loadSportActivities = async () => {
+      try {
+        const activitiesData = await fetchSportActivitiesApi();
+        setSportActivities(activitiesData);
+      } catch (err) {
+        console.error("Failed to load sport activities", err);
+      }
+    };
+    loadSports();
+    loadSportActivities();
+  }, []);
+
+  useEffect(() => {
+    if (sportActivities.length === 0 || reviews.length === 0) return;
+
+    setReviews(prevReviews => {
+      let changed = false;
+      const updatedReviews = prevReviews.map(review => {
+        if (review.revRatings || !review.revRatingActivities?.length) return review;
+
+        const revRatings = buildRatingsFromActivityRows(review, sportActivities);
+
+        if (Object.values(revRatings).some(value => value > 0)) {
+          changed = true;
+          return { ...review, revRatings };
+        }
+
+        return review;
+      });
+
+      return changed ? updatedReviews : prevReviews;
+    });
+  }, [sportActivities, reviews]);
+
   // ── Context value ─────────────────────────────────────────────────────────
   return (
     <AppContext.Provider value={{
-      players, reviews, scouts, documents, clubs, clubContacts, contactRoles, playerPositions,
+      players, reviews, scouts, documents, clubs, clubContacts, contactRoles, playerPositions, sports, sportActivities,
       notes, tasks, emails, templates, loadDocuments,
 
 
@@ -396,7 +451,10 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             agent_scout_id: p.agent_scout_id,
             contact_info: p.contact_info,
             profileImage: undefined,
-            player_email:p.player_email
+            player_email: p.player_email,
+            sportId: p.sportId,
+            contractStartWithCoach: p.contractStartWithCoach,
+            contractEndWithCoach: p.contractEndWithCoach
           });
 
           console.log("Created:", created);
@@ -458,7 +516,10 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             agentName: p.agentName,
             agent_scout_id: p.agent_scout_id,
             contact_info: p.contact_info,
-            profileImage: p.profileImage
+            profileImage: p.profileImage,
+            sportId: p.sportId,
+            contractStartWithCoach: p.contractStartWithCoach,
+            contractEndWithCoach: p.contractEndWithCoach,
           });
 
           setPlayers(prev =>
@@ -511,23 +572,55 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             notes: r.notes,
           });
 
-          await createReviewRatingApi({
-            reviewId: createdReview.reviewId,
-            passing: r.revRatings.passing,
-            shooting: r.revRatings.shooting,
-            dribbling: r.revRatings.dribbling,
-            tacticalAwareness: r.revRatings.tacticalAwareness,
-            defensiveContribution: r.revRatings.defensiveContribution,
-            physicalStrength: r.revRatings.physicalStrength,
-            behavior: r.revRatings.behavior,
-            overallPerformance: r.revRatings.overallPerformance,
-          });
+          if (Array.isArray((r as any).revRatingActivities) && (r as any).revRatingActivities.length > 0) {
+            try {
+              await createReviewActivityRatingsApi({
+                reviewId: createdReview.reviewId,
+                ratings: (r as any).revRatingActivities,
+              });
+            } catch (ratingErr) {
+              console.error('Failed to save review activity ratings', ratingErr);
+            }
+          } else if (r.revRatings && typeof r.revRatings === 'object' && !Array.isArray(r.revRatings)) {
+            const staticRatingKeys = ['passing', 'shooting', 'dribbling', 'tacticalAwareness', 'defensiveContribution', 'physicalStrength', 'behavior', 'overallPerformance'];
+            const hasStaticRatings = staticRatingKeys.every(key => key in r.revRatings);
+            if (hasStaticRatings) {
+              await createReviewRatingApi({
+                reviewId: createdReview.reviewId,
+                passing: r.revRatings.passing,
+                shooting: r.revRatings.shooting,
+                dribbling: r.revRatings.dribbling,
+                tacticalAwareness: r.revRatings.tacticalAwareness,
+                defensiveContribution: r.revRatings.defensiveContribution,
+                physicalStrength: r.revRatings.physicalStrength,
+                behavior: r.revRatings.behavior,
+                overallPerformance: r.revRatings.overallPerformance,
+              });
+            }
+          }
+
+          if (r.revSkillDetails && typeof r.revSkillDetails === 'object') {
+            await Promise.all(Object.entries(r.revSkillDetails).map(async ([skillKey, detail]) => {
+              try {
+                await createReviewSkillDetailApi({
+                  reviewId: createdReview.reviewId,
+                  skillKey,
+                  rating: detail.rating,
+                  commentText: detail.comment,
+                  followUpDate: detail.followUpDate,
+                });
+              } catch (detailErr) {
+                console.error(`Failed to save review skill detail ${skillKey}`, detailErr);
+              }
+            }));
+          }
 
           setReviews(prev => [...prev, {
             ...r,
             reviewId: createdReview.reviewId,
             revRatings: r.revRatings,
             revSkillDetails: r.revSkillDetails,
+            revRatingActivities: (r as any).revRatingActivities,
           }]);
 
           showSuccess('Review Created', `Review ${createdReview.reviewId} was created successfully.`);
@@ -1423,6 +1516,102 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         } catch (err) {
           console.error("Delete player position API failed", err);
           showError("Error", "Failed to delete player position");
+        }
+      },
+
+      addSport: async (sport: Sport) => {
+        try {
+          const created = await createSportApi({
+            sportName: sport.sportName
+          });
+
+          setSports(prev => [...prev, created]);
+          showSuccess("Sport Created", "Sport created successfully");
+
+        } catch (err) {
+          console.error("Create sport API failed", err);
+          showError("Error", "Failed to create sport");
+        }
+      },
+
+      updateSport: async (sport: Sport) => {
+        try {
+          const updated = await updateSportApi(sport.sportId, {
+            sportName: sport.sportName
+          });
+
+          setSports(prev =>
+            prev.map(x => x.sportId === sport.sportId ? updated : x)
+          );
+          showSuccess("Sport Updated", "Sport updated successfully");
+
+        } catch (err) {
+          console.error("Update sport API failed", err);
+          showError("Error", "Failed to update sport");
+        }
+      },
+
+      deleteSport: async (id: number) => {
+        try {
+          await deleteSportApi(id);
+
+          setSports(prev =>
+            prev.filter(x => x.sportId !== id)
+          );
+          showSuccess("Sport Deleted", "Sport deleted successfully");
+
+        } catch (err) {
+          console.error("Delete sport API failed", err);
+          showError("Error", "Failed to delete sport");
+        }
+      },
+
+      addSportActivity: async (activity: SportActivity) => {
+        try {
+          const created = await createSportActivityApi({
+            sportId: activity.sportId,
+            activityName: activity.activityName
+          });
+
+          setSportActivities(prev => [...prev, created]);
+          showSuccess("Activity Created", "Sport activity created successfully");
+
+        } catch (err) {
+          console.error("Create sport activity API failed", err);
+          showError("Error", "Failed to create sport activity");
+        }
+      },
+
+      updateSportActivity: async (activity: SportActivity) => {
+        try {
+          const updated = await updateSportActivityApi(activity.activityId, {
+            sportId: activity.sportId,
+            activityName: activity.activityName
+          });
+
+          setSportActivities(prev =>
+            prev.map(x => x.activityId === activity.activityId ? updated : x)
+          );
+          showSuccess("Activity Updated", "Sport activity updated successfully");
+
+        } catch (err) {
+          console.error("Update sport activity API failed", err);
+          showError("Error", "Failed to update sport activity");
+        }
+      },
+
+      deleteSportActivity: async (id: number) => {
+        try {
+          await deleteSportActivityApi(id);
+
+          setSportActivities(prev =>
+            prev.filter(x => x.activityId !== id)
+          );
+          showSuccess("Activity Deleted", "Sport activity deleted successfully");
+
+        } catch (err) {
+          console.error("Delete sport activity API failed", err);
+          showError("Error", "Failed to delete sport activity");
         }
       },
 

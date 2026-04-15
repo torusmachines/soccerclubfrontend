@@ -305,7 +305,7 @@ const Tasks = () => {
         task={selectedTask}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Unknown Scout') : 'Unknown Scout'}
+        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Auto-generated') : 'Auto-generated'}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
         onUpdateTask={updateTask}
@@ -418,7 +418,7 @@ const AddTaskDialog = ({ players, clubs, scouts, onAdd }: { players: any[]; club
           </div>
           <div><Label>Assigned To <span className="text-red-500">*</span></Label>
             <Select value={assignedTo} onValueChange={value => { setAssignedTo(value); setErrors(prev => ({ ...prev, assignedTo: '' })); }}>
-              <SelectTrigger><SelectValue placeholder="Select Coach" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select coach" /></SelectTrigger>
               <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
             </Select>
             {errors.assignedTo && <p className="text-xs text-destructive mt-1">{errors.assignedTo}</p>}

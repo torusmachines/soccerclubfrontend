@@ -15,7 +15,5 @@ export const mapScout = (api: any): Scout => ({
   state: api.state,
   postalCode: api.postalCode ?? api.postal_code,
   country: api.country,
-  lockedAreas: api.lockedAreas,
-  isShowPlayer: api.isShowPlayer ?? false,
   createdAt: api.createdAt ?? new Date().toISOString(),
 });

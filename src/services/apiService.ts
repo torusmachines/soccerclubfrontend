@@ -7,14 +7,20 @@
 import axios from 'axios';
 import type {
   Scout, Club, ClubContact, Player,
-  Review, Note, Task, Email, Template, Ratings,
+  Review, Note, Task, TaskComment, Email, Template, Ratings,
   TaskStatus,
   TaskSource,
   PlayerDocument,
   ContactRole,
   PlayerPosition,
+  Sport,
+  SportActivity,
+  ReviewActivityRating,
   Sponsor,
   CommercialContract,
+  AiPlanGeneratePayload,
+  AiPlanResponse,
+  AiPlanHistoryResponse,
 } from '@/types';
 
 const TOKEN_KEY = 'auth_token';
@@ -85,6 +91,9 @@ export const fetchEmails = (): Promise<Email[]> => api.get('/Emails');
 export const fetchTemplates = (): Promise<Template[]> => api.get('/Templates');
 export const fetchReviews = (): Promise<Review[]> => api.get('/Reviews');
 export const fetchReviewRatings = (): Promise<Ratings[]> => api.get('/ReviewRatings');
+export const fetchReviewActivityRatings = (): Promise<ReviewActivityRating[]> => api.get('/ReviewActivityRatings');
+export const fetchReviewActivityRatingsByReview = (reviewId: string): Promise<ReviewActivityRating[]> =>
+  api.get(`/ReviewActivityRatings/review/${reviewId}`);
 
 // =======================================================
 // SPONSOR APIs
@@ -327,6 +336,17 @@ export const updateTaskApi = (
 export const deleteTaskApi = (taskId: string): Promise<void> =>
   api.delete(`/Tasks/${taskId}`);
 
+export const fetchTaskComments = (taskId: string, page = 1, pageSize = 20): Promise<TaskComment[]> =>
+  api.get(`/tasks/${taskId}/comments`, { params: { page, pageSize } });
+
+export const createTaskCommentApi = (taskId: string, payload: { comment: string; isVisibleToPlayer: boolean }): Promise<TaskComment> =>
+  api.post(`/tasks/${taskId}/comments`, payload);
+
+export const updateTaskCommentApi = (commentId: string, payload: { comment: string; isVisibleToPlayer: boolean }): Promise<TaskComment> =>
+  api.put(`/comments/${commentId}`, payload);
+
+export const deleteTaskCommentApi = (commentId: string): Promise<void> =>
+  api.delete(`/comments/${commentId}`);
 
 
 // =======================================================
@@ -345,11 +365,14 @@ export const createPlayerApi = (payload: {
   currentClub: string
   contractStart: string
   contractEnd: string
+  contractStartWithCoach?: string | null
+  contractEndWithCoach?: string | null
   agentName: string
   agent_scout_id: string
   contact_info: string
   profileImage?: string
   player_email:string
+  sportId?: number
 }): Promise<Player> =>
   api.post('/Players', payload);
 
@@ -384,7 +407,25 @@ export const createReviewRatingApi = (payload: {
   overallPerformance: number;
 }): Promise<Ratings> => api.post('/ReviewRatings', payload);
 
+export const createReviewActivityRatingsApi = (payload: {
+  reviewId: string;
+  ratings: Array<{
+    activityId: number;
+    rating: number;
+    comment?: string;
+    ratingFollowupDate?: string | Date;
+  }>;
+}): Promise<any> => api.post('/ReviewActivityRatings/bulk', payload);
 
+export const createReviewSkillDetailApi = (payload: {
+  reviewId: string;
+  skillKey: string;
+  rating: number;
+  commentText?: string;
+  followUpDate?: string;
+}): Promise<any> => api.post('/ReviewSkillDetails', payload);
+
+export const fetchReviewSkillDetailsByReviewApi = (reviewId: string): Promise<any[]> => api.get(`/ReviewSkillDetails/review/${reviewId}`);
 
 export const createNoteApi = (payload: {
   playerId?: string;
@@ -603,8 +644,21 @@ export const uploadCompanyLogoApi = async (file: File): Promise<{ logoUrl: strin
 // PLAYER POSITION APIs
 // =======================================================
 
-export const fetchPlayerPositions = (): Promise<PlayerPosition[]> => 
+export const fetchPlayerPositions = (): Promise<PlayerPosition[]> =>
   api.get('/PlayerPositions');
+
+// =======================================================
+// AI PLAN APIs
+// =======================================================
+
+export const generateAiPlanApi = (playerId: string, payload: AiPlanGeneratePayload): Promise<AiPlanResponse> =>
+  api.post(`/ai/generate/${playerId}`, payload);
+
+export const getLatestAiPlanApi = (playerId: string): Promise<AiPlanResponse> =>
+  api.get(`/ai/latest/${playerId}`);
+
+export const getAiPlanHistoryApi = (playerId: string): Promise<AiPlanHistoryResponse> =>
+  api.get(`/ai/history/${playerId}`);
 
 export const createPlayerPositionApi = (payload: {
   positionCode: string;
@@ -625,5 +679,56 @@ export const updatePlayerPositionApi = (
 
 export const deletePlayerPositionApi = (id: string): Promise<void> =>
   api.delete(`/PlayerPositions/${id}`);
+
+// Sports API
+export const fetchSportsApi = (): Promise<Sport[]> =>
+  api.get('/Sports');
+
+export const createSportApi = (payload: {
+  sportName: string;
+}): Promise<Sport> =>
+  api.post('/Sports', payload);
+
+export const updateSportApi = (
+  id: number,
+  payload: {
+    sportName: string;
+  }
+): Promise<Sport> =>
+  api.put(`/Sports/${id}`, payload);
+
+export const deleteSportApi = (id: number): Promise<void> =>
+  api.delete(`/Sports/${id}`);
+
+// Sport Activities API
+export const fetchSportActivitiesApi = (): Promise<SportActivity[]> =>
+  api.get('/SportActivities');
+
+export const createSportActivityApi = (payload: {
+  sportId: number;
+  activityName: string;
+}): Promise<SportActivity> =>
+  api.post('/SportActivities', payload);
+
+export const updateSportActivityApi = (
+  id: number,
+  payload: {
+    sportId: number;
+    activityName: string;
+  }
+): Promise<SportActivity> =>
+  api.put(`/SportActivities/${id}`, payload);
+
+export const deleteSportActivityApi = (id: number): Promise<void> =>
+  api.delete(`/SportActivities/${id}`);
+
+export const fetchSportActivitiesBySportApi = (sportId: number): Promise<SportActivity[]> =>
+  api.get(`/SportActivities/BySport/${sportId}`);
+
+export const fetchScoutsBySportApi = (sportId: number): Promise<Scout[]> =>
+  api.get(`/Scouts/BySport/${sportId}`);
+
+export const fetchPlayerPositionsBySportApi = (sportId: number): Promise<PlayerPosition[]> =>
+  api.get(`/PlayerPositions/BySport/${sportId}`);
 
 export default api;
