@@ -164,16 +164,16 @@ export const AppLayout = () => {
         <div className="mt-auto p-4 border-t border-sidebar-border">
           <div className="flex items-center justify-between">
             <div className='flex items-center gap-2'>
-            <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Guest')}&background=random&color=fff&size=64`} alt={user?.fullName || 'Guest'} className="h-10 w-10 rounded-full object-cover" />
-             <div className='block'>
-               <p className="text-sm font-medium font-bold text-white">{user?.fullName || 'Guest'}</p>
-              <p className="text-xs text-white ">{user?.role || ''}</p>
-             </div>
+              <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'Guest')}&background=random&color=fff&size=64`} alt={user?.fullName || 'Guest'} className="h-10 w-10 rounded-full object-cover" />
+              <div className='block'>
+                <p className="text-sm font-medium font-bold text-white">{user?.fullName || 'Guest'}</p>
+                <p className="text-xs text-white ">{user?.role || ''}</p>
+              </div>
             </div>
             <div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon"><MoreHorizontal size={18} className="text-white"/></Button>
+                  <Button variant="ghost" size="icon"><MoreHorizontal size={18} className="text-white" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {(user?.role === 'Player' || user?.role === 'Scout') && (
@@ -188,6 +188,7 @@ export const AppLayout = () => {
               </DropdownMenu>
             </div>
           </div>
+          <div style={{ color: 'white', fontSize: '10px', height: '10px', textAlign: 'right' }}>1.0.0.1</div>
         </div>
       </aside>
 
