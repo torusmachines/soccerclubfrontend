@@ -5,6 +5,7 @@ import { useAppContext } from '@/context/PlayerContext';
 import { Scout } from '@/types';
 import { useSearchParams } from 'react-router-dom';
 import { inviteUserApi } from '@/services/apiService';
+import { fetchScouts } from '@/services/apiService';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,25 @@ const Scouts = () => {
       setShouldOpenOwnEdit(true);
     }
   }, [searchParams]);
+
+  const [isLoadingScouts, setIsLoadingScouts] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (scouts.length > 0) return;
+      setIsLoadingScouts(true);
+      try {
+        await fetchScouts();
+      } catch (err) {
+        console.error('Failed to fetch scouts for spinner', err);
+      } finally {
+        if (!cancelled) setIsLoadingScouts(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [scouts.length]);
 
   useEffect(() => {
     if (!shouldOpenOwnEdit) return;
@@ -150,52 +170,62 @@ const Scouts = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map(scout => (
-              <TableRow key={scout.scoutId}>
-                <TableCell className="font-medium">{scout.scoutName}</TableCell>
-                <TableCell>{scout.firstName || '-'}</TableCell>
-                <TableCell>{scout.lastName || '-'}</TableCell>
-                <TableCell>{scout.roleName}</TableCell>
-                <TableCell>{scout.email || '-'}</TableCell>
-                <TableCell>{scout.phoneNumber || '-'}</TableCell>
-                <TableCell>{scout.city || '-'}</TableCell>
-                <TableCell>{scout.country || '-'}</TableCell>
-                <TableCell>{sports.find(s => s.sportId === scout.sportId)?.sportName || '-'}</TableCell>
-                {!isPlayer && (
-                  <TableCell>
-                    <div className="flex gap-2">
-                      {isAdmin && (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => handleLockClick(scout)}
-                        >
-                          <LockKeyholeIcon size={14} />
-                        </Button>
-                      )}
-                      {!isScout && (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => handleEditClick(scout)}
-                        >
-                          <Edit size={14} />
-                        </Button>
-                      )}
-                      {!isScout && (
-                        <Button 
-                          size="sm" 
-                          variant="destructive"
-                          onClick={() => handleDelete(scout.scoutId)}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                )}
+            {isLoadingScouts ? (
+              <TableRow>
+                <TableCell colSpan={isPlayer ? 9 : 10} className="text-center">
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+                  </div>
+                </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filtered.map(scout => (
+                <TableRow key={scout.scoutId}>
+                  <TableCell className="font-medium">{scout.scoutName}</TableCell>
+                  <TableCell>{scout.firstName || '-'}</TableCell>
+                  <TableCell>{scout.lastName || '-'}</TableCell>
+                  <TableCell>{scout.roleName}</TableCell>
+                  <TableCell>{scout.email || '-'}</TableCell>
+                  <TableCell>{scout.phoneNumber || '-'}</TableCell>
+                  <TableCell>{scout.city || '-'}</TableCell>
+                  <TableCell>{scout.country || '-'}</TableCell>
+                  <TableCell>{sports.find(s => s.sportId === scout.sportId)?.sportName || '-'}</TableCell>
+                  {!isPlayer && (
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {isAdmin && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleLockClick(scout)}
+                          >
+                            <LockKeyholeIcon size={14} />
+                          </Button>
+                        )}
+                        {!isScout && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleEditClick(scout)}
+                          >
+                            <Edit size={14} />
+                          </Button>
+                        )}
+                        {!isScout && (
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={() => handleDelete(scout.scoutId)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>

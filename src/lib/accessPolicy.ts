@@ -1,4 +1,4 @@
-export type UserRole = 'Admin' | 'Player' | 'Scout';
+export type UserRole = 'Admin' | 'Player' | 'Scout' | 'Coach';
 
 export type Permission =
   | 'dashboard:view'
@@ -13,7 +13,8 @@ export type Permission =
   | 'templates:view'
   | 'templates:manage'
   | 'matching:view'
-  | 'commercial:view';
+  | 'commercial:view'
+  | 'admin:manage';
 
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   Admin: [
@@ -30,26 +31,35 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'templates:manage',
     'matching:view',
     'commercial:view',
+    'admin:manage',
   ],
   Player: [
     'dashboard:view',
     'players:view',
-    'players:manage',
     'scouts:view',
     'tasks:view',
   ],
   Scout: [
     'dashboard:view',
     'clubs:view',
+    'clubs:manage',
+    'players:view',
+    'players:manage',
+    'scouts:view',
+    'tasks:view',
+    'tasks:manage',
+    'matching:view',
+  ],
+  Coach: [
+    'dashboard:view',
     'players:view',
     'scouts:view',
     'tasks:view',
-    'matching:view',
   ],
 };
 
 export const normalizeRole = (role?: string | null): UserRole | null => {
-  if (role === 'Admin' || role === 'Player' || role === 'Scout') {
+  if (role === 'Admin' || role === 'Player' || role === 'Scout' || role === 'Coach') {
     return role;
   }
   return null;

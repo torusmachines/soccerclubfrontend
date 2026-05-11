@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Target, Menu, Building2, CheckSquare, FileText, Eye, MoreHorizontal, Settings as SettingsIcon, DollarSign } from 'lucide-react';
+import { LayoutDashboard, Users, Target, Menu, Building2, CheckSquare, FileText, Eye, MoreHorizontal, Settings as SettingsIcon, DollarSign, Trophy, ChevronDown, ChevronRight, ClipboardList } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ import { applyTheme, getSavedTheme } from '@/lib/themes';
 import { getContractExpiringMonths, setContractExpiringMonths } from '@/lib/settingsUtils';
 import logoDark from '@/assets/logo-dark.jpeg';
 import logoLight from '@/assets/logo-light.jpeg';
-import { fetchCompanyProfile } from '@/services/apiService';
 import { useAppContext } from '@/context/PlayerContext';
+import { fetchScouts } from '@/services/apiService';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:view' as Permission },
@@ -23,7 +23,8 @@ const navItems = [
   { to: '/tasks', label: 'Tasks', icon: CheckSquare, permission: 'tasks:view' as Permission },
   { to: '/templates', label: 'Templates', icon: FileText, permission: 'templates:view' as Permission },
   { to: '/matching', label: 'Matching', icon: Target, permission: 'matching:view' as Permission },
-  { to: '/commercial', label: 'Commercial', icon: DollarSign, permission: 'commercial:view' as Permission },
+  { to: '/contracts', label: 'Contracts', icon: DollarSign, permission: 'commercial:view' as Permission },
+  { to: '/pending-approvals', label: 'Approvals', icon: ClipboardList, permission: 'admin:manage' as Permission },
 ];
 
 export const AppLayout = () => {
@@ -44,35 +45,89 @@ export const AppLayout = () => {
   const lockedAreas = (() => {
     if (!isRestrictedUser || !currentScout?.lockedAreas) return [] as string[];
 
+    const normalizeArray = (arr: any[]) => arr
+      .filter(item => typeof item === 'string')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
+
     if (Array.isArray(currentScout.lockedAreas)) {
-      return currentScout.lockedAreas.filter(item => typeof item === 'string');
+      return normalizeArray(currentScout.lockedAreas);
     }
 
     try {
       const parsed = JSON.parse(currentScout.lockedAreas);
-      return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : [];
+      return Array.isArray(parsed) ? normalizeArray(parsed) : [];
     } catch {
+      // if it's a plain string like "Clubs, Matching" try splitting by comma
+      if (typeof currentScout.lockedAreas === 'string') {
+        return currentScout.lockedAreas
+          .split(',')
+          .map(s => s.trim().toLowerCase())
+          .filter(s => s.length > 0);
+      }
       return [];
     }
   })();
+
+  const [lockedAreasOverride, setLockedAreasOverride] = useState<string[] | null>(null);
+  const scoutsFetchAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const ensureLockedAreas = async () => {
+      // If we already have locked areas from the currentScout or override, nothing to do
+      if ((lockedAreas && lockedAreas.length > 0) || (lockedAreasOverride && lockedAreasOverride.length > 0)) return;
+      if (!isRestrictedUser || !user?.email) return;
+      // Don't attempt repeated remote fetches — try at most once per app load
+      if (scoutsFetchAttemptedRef.current) return;
+      scoutsFetchAttemptedRef.current = true;
+
+      const normalize = (v: any): string[] => {
+        if (!v) return [];
+        if (Array.isArray(v)) return v.filter((it: any) => typeof it === 'string').map((s: string) => s.trim().toLowerCase());
+        try {
+          const parsed = JSON.parse(v);
+          if (Array.isArray(parsed)) return parsed.filter((it: any) => typeof it === 'string').map((s: string) => s.trim().toLowerCase());
+        } catch { /* ignore */ }
+        if (typeof v === 'string') return v.split(',').map((s: string) => s.trim().toLowerCase()).filter((s: string) => s.length > 0);
+        return [];
+      };
+
+      try {
+        // Prefer already-loaded scouts from context to avoid an extra network call
+        if (Array.isArray(scouts) && scouts.length > 0) {
+          const matchLocal = scouts.find((s: any) => (s.email || '').toLowerCase() === user.email.toLowerCase());
+          const rawLockedLocal = matchLocal ? ((matchLocal as any).lockedAreas ?? (matchLocal as any)['locked_areas'] ?? (matchLocal as any)['locked_areas_text'] ?? null) : null;
+          const normalizedLocal = normalize(rawLockedLocal);
+          if (!cancelled) { setLockedAreasOverride(normalizedLocal); }
+          return;
+        }
+
+        // Fallback: fetch scouts once
+        const remoteScouts = await fetchScouts();
+        if (cancelled || !Array.isArray(remoteScouts)) return;
+        const match = remoteScouts.find((s: any) => (s.email || '').toLowerCase() === user.email.toLowerCase());
+        const rawLocked = match ? ((match as any).lockedAreas ?? (match as any)['locked_areas'] ?? (match as any)['locked_areas_text'] ?? null) : null;
+        const normalized = normalize(rawLocked);
+        if (!cancelled) setLockedAreasOverride(normalized);
+      } catch (err) {
+        // swallow — best-effort only
+        console.debug('AppLayout: failed to fetch scouts for lockedAreas', err);
+        if (!cancelled) setLockedAreasOverride([]);
+      }
+    };
+
+    ensureLockedAreas();
+    return () => { cancelled = true; };
+  }, [isRestrictedUser, user?.email, lockedAreas]);
 
   useEffect(() => {
     applyTheme(getSavedTheme());
   }, []);
 
   useEffect(() => {
-    fetchCompanyProfile().then((res) => {
-      setCompanyName(res.companyName || '');
-      setCompanyLogo(res.logoUrl || null);
-      if (typeof res.contractExpiringMonths === 'number' && res.contractExpiringMonths > 0) {
-        setContractExpiringMonths(res.contractExpiringMonths);
-      } else {
-        setContractExpiringMonths(getContractExpiringMonths());
-      }
-    }).catch(() => {
-      // ignore
-      setContractExpiringMonths(getContractExpiringMonths());
-    });
+    setContractExpiringMonths(getContractExpiringMonths());
   }, []);
 
   // Listen for company profile updates from settings page
@@ -92,7 +147,7 @@ export const AppLayout = () => {
 
   const NavContent = () => (
     <nav className="flex flex-col gap-1 p-3">
-      {navItems.filter(item => hasPermission(user?.role, item.permission) && (!isRestrictedUser || !lockedAreas.includes(item.label))).map(item => {
+      {navItems.filter(item => hasPermission(user?.role, item.permission) && (!isRestrictedUser || !((lockedAreasOverride ?? lockedAreas).includes(item.label.toLowerCase())))).map(item => {
         const active = location.pathname.startsWith(item.to);
         return (
           <Link
@@ -110,7 +165,7 @@ export const AppLayout = () => {
         );
       })}
 
-      {(!isRestrictedUser || !lockedAreas.includes('Settings')) && (
+      {(!isRestrictedUser || !lockedAreas.includes('settings')) && (
         <div className=''>
           <button
             onClick={() => setSettingsOpen((s) => !s)}
@@ -119,25 +174,45 @@ export const AppLayout = () => {
             )}
           >
             <SettingsIcon size={18} />
-            Settings
+            <span>Settings</span>
+            <span className="ml-auto text-sidebar-foreground/70">
+              {settingsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
           </button>
-          {settingsOpen && (
-            <div className="mt-2 px-7">
-              {/* ThemeSelector moved to Company Profile form */}
-              <div className="px-3 py-1">
-                <button onClick={() => { navigate('/settings/company-profile'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Company Profile</button>
-              </div>
-              <div className="px-3 py-1">
-                <button onClick={() => { navigate('/settings/manage-roles'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Manage Roles</button>
-              </div>
-              <div className="px-3 py-1">
-                <button onClick={() => { navigate('/settings/manage-positions'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Manage Positions</button>
-              </div>
-              <div className="px-3 py-1">
-                <button onClick={() => { navigate('/settings/sports-management'); setSettingsOpen(false); }} className="w-full text-left text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground ">Sports Management</button>
-              </div>
+          <div className={`mt-2 px-3 transform origin-top transition-all duration-200 ${settingsOpen ? 'opacity-100 scale-100 max-h-96' : 'opacity-0 scale-95 max-h-0 pointer-events-none'}`}>
+            <hr />
+            {/* ThemeSelector moved to Company Profile form */}
+            <div className="px-3 py-1">
+              <button onClick={() => { navigate('/settings/company-profile'); }} className={cn("w-full flex items-center gap-2 text-left text-[15px] px-2 py-1 rounded-md", location.pathname.startsWith('/settings/company-profile') ? 'bg-sidebar-accent text-sidebar-primary' : 'text-sidebar-foreground/80 hover:text-sidebar-foreground')}>
+                <Building2 size={14} />
+                Company Profile
+              </button>
             </div>
-          )}
+            <div className="px-3 py-1">
+              <button onClick={() => { navigate('/settings/manage-roles'); }} className={cn("w-full flex items-center gap-2 text-left text-[15px] px-2 py-1 rounded-md", location.pathname.startsWith('/settings/manage-roles') ? 'bg-sidebar-accent text-sidebar-primary' : 'text-sidebar-foreground/80 hover:text-sidebar-foreground')}>
+                <Users size={14} />
+                Manage Roles
+              </button>
+            </div>
+            {/* <div className="px-3 py-1">
+              <button onClick={() => { navigate('/settings/manage-positions'); }} className={cn("w-full flex items-center gap-2 text-left text-[15px] px-2 py-1 rounded-md", location.pathname.startsWith('/settings/manage-positions') ? 'bg-sidebar-accent text-sidebar-primary' : 'text-sidebar-foreground/80 hover:text-sidebar-foreground')}>
+                <Target size={14} />
+                Manage Positions
+              </button>
+            </div> */}
+            <div className="px-3 py-1">
+              <button onClick={() => { navigate('/settings/sports-management'); }} className={cn("w-full flex items-center gap-2 text-left text-[15px] px-2 py-1 rounded-md", location.pathname.startsWith('/settings/sports-management') ? 'bg-sidebar-accent text-sidebar-primary' : 'text-sidebar-foreground/80 hover:text-sidebar-foreground')}>
+                <Trophy size={14} />
+                Sports Management
+              </button>
+            </div>
+            <div className="px-3 py-1">
+              <button onClick={() => { navigate('/settings/sponsors-management'); }} className={cn("w-full flex items-center gap-2 text-left text-[15px] px-2 py-1 rounded-md", location.pathname.startsWith('/settings/sponsors-management') ? 'bg-sidebar-accent text-sidebar-primary' : 'text-sidebar-foreground/80 hover:text-sidebar-foreground')}>
+                <DollarSign size={14} />
+                Sponsors
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </nav>

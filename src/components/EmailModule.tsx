@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { Send, Trash2, Mail } from 'lucide-react';
 import { useAppContext } from '@/context/PlayerContext';
 import { Email, EntityType, Template, TEMPLATE_VARIABLES } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,17 +9,28 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Mail, Send, Trash2 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { isScoutRole, isPlayerRole } from '@/lib/accessPolicy';
+
+// Ensure players cannot perform destructive email actions
 import { format } from 'date-fns';
 
 interface EmailModuleProps {
   entityType: EntityType;
   entityId: string;
   readOnly?: boolean;
+  overrideScouts?: any[];
+  overrideTemplates?: Template[];
+  apiEmails?: Email[];
 }
 
-export const EmailModule = ({ entityType, entityId, readOnly = false }: EmailModuleProps) => {
+export const EmailModule = ({ entityType, entityId, readOnly = false, overrideScouts, overrideTemplates, apiEmails }: EmailModuleProps) => {
   const { emails, addEmail, scouts, templates, updateEmail, deleteEmail, } = useAppContext();
+  const effectiveScouts = overrideScouts ?? scouts;
+  const effectiveTemplates = overrideTemplates ?? templates;
+
+  const { user } = useAuth();
+  const isPlayer = isPlayerRole(user?.role);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
@@ -28,24 +40,24 @@ export const EmailModule = ({ entityType, entityId, readOnly = false }: EmailMod
   //     .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()),
   //   [emails, entityType, entityId]
   // );
-  const entityEmails = useMemo(() =>
-    emails
+  const entityEmails = useMemo(() => {
+    const source = apiEmails ?? emails;
+    return source
       .filter(e =>
         (entityType === 'player' && String(e.playerId) === String(entityId)) ||
         (entityType === 'club' && String(e.clubId) === String(entityId))
       )
-      .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()),
-    [emails, entityType, entityId]
-  );
+      .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+  }, [apiEmails, emails, entityType, entityId]);
 
   return (
     <div className="space-y-4">
       {!readOnly && (
         <div className="flex justify-end">
-          <ComposeEmailDialog entityType={entityType} entityId={entityId} scouts={scouts} templates={templates} onSend={addEmail} />
+          <ComposeEmailDialog entityType={entityType} entityId={entityId} scouts={effectiveScouts} templates={effectiveTemplates} onSend={addEmail} />
         </div>
       )}
-      {!readOnly && (
+      {!readOnly && !isPlayer && (
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -128,7 +140,7 @@ export const EmailModule = ({ entityType, entityId, readOnly = false }: EmailMod
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(email.sentAt), 'MMM d, yyyy HH:mm')}
                     </span>
-                    {!readOnly && (
+                    {!readOnly && !isPlayer && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -157,13 +169,39 @@ export const EmailModule = ({ entityType, entityId, readOnly = false }: EmailMod
 const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }: {
   entityType: EntityType; entityId: string; scouts: any[]; templates: Template[]; onSend: (e: Email) => Promise<void>;
 }) => {
-  const { players, clubs, reviews } = useAppContext();
+  const { players, clubs, reviews, templates: contextTemplates } = useAppContext();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [sentBy, setSentBy] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Resolve the current user's scoutId (for Scout role) or 'admin' (for Admin role)
+  const currentUserScoutId = useMemo(() => {
+    if (!user) return '';
+    if (user.role === 'Admin') return 'admin';
+    if (isScoutRole(user.role)) {
+      const matched = scouts.find(s =>
+        (s.email || '').trim().toLowerCase() === (user.email || '').trim().toLowerCase()
+      );
+      return matched?.scoutId ?? '';
+    }
+    return '';
+  }, [user, scouts]);
+
+  // Build the effective sendbBy options: include Admin entry when logging in as admin
+  const sendByOptions = useMemo(() => {
+    const options = scouts.map((s: any) => ({ id: s.scoutId, label: s.scoutName }));
+    if (user?.role === 'Admin') {
+      const adminEntry = { id: 'admin', label: user.fullName || user.name || 'Admin' };
+      if (!options.find(o => o.id === 'admin')) {
+        options.unshift(adminEntry);
+      }
+    }
+    return options;
+  }, [scouts, user]);
 
   useEffect(() => {
     if (!open) {
@@ -172,8 +210,11 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
       setBody('');
       setSentBy('');
       setErrors({});
+    } else {
+      // Auto-select current user when dialog opens
+      setSentBy(currentUserScoutId);
     }
-  }, [open]);
+  }, [open, currentUserScoutId]);
 
   const resolveVariables = (text: string): string => {
     if (!text) return text;
@@ -224,14 +265,15 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
   // };
 
   const applyTemplate = (templateId: string) => {
-    const tmpl = templates.find(t => t.templateId === templateId);
+    const tmpl = contextTemplates.find(t => t.templateId === templateId)
+              ?? (templates as any[]).find(t => String(t.templateId) === String(templateId));
     if (tmpl) {
-      setSubject(resolveVariables(tmpl.subject || ''));
-      setBody(resolveVariables(tmpl.body));
+      setSubject(resolveVariables((tmpl as any).subject || ''));
+      setBody(resolveVariables((tmpl as any).body || ''));
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const nextErrors: Record<string, string> = {};
 
     if (!to.trim()) nextErrors.to = 'Required field';
@@ -244,19 +286,23 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
       return;
     }
 
-    onSend({
-      emailId: '',                                              // ignored, API generates it
-      playerId: entityType === 'player' ? entityId : undefined,
-      clubId: entityType === 'club' ? entityId : undefined,
-      recipientEmail: to,
-      subject,
-      body,
-      sentByScoutId: sentBy,
-      sentAt: new Date().toISOString(),
-    });
-    setOpen(false);
-    setTo(''); setSubject(''); setBody(''); setSentBy('');
-    setErrors({});
+    try {
+      await onSend({
+        emailId: '',                                              // ignored, API generates it
+        playerId: entityType === 'player' ? entityId : undefined,
+        clubId: entityType === 'club' ? entityId : undefined,
+        recipientEmail: to,
+        subject,
+        body,
+        sentByScoutId: sentBy,
+        sentAt: new Date().toISOString(),
+      });
+      setOpen(false);
+      setTo(''); setSubject(''); setBody(''); setSentBy('');
+      setErrors({});
+    } catch {
+      // Keep the dialog open so user can retry/correct data on failure.
+    }
   };
 
 
@@ -267,11 +313,18 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Compose Email</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          {templates.filter(t => t.templateType === 'email').length > 0 && (
+          {templates.filter(t => t.templateType === 'email' || (t as any).templateType === 'email').length > 0 && (
             <div><Label>Use Template</Label>
               <Select onValueChange={applyTemplate}>
                 <SelectTrigger><SelectValue placeholder="Select template..." /></SelectTrigger>
-                <SelectContent>{templates.filter(t => t.templateType === 'email').map(t => <SelectItem key={t.templateId} value={t.templateId}>{t.templateName}</SelectItem>)}</SelectContent>
+                <SelectContent>{templates
+                  .filter(t => t.templateType === 'email' || (t as any).templateType === 'email')
+                  .map(t => {
+                    const id = t.templateId ?? (t as any).templateId;
+                    const name = t.templateName ?? (t as any).templateName;
+                    return <SelectItem key={id} value={id}>{name}</SelectItem>;
+                  })}
+                </SelectContent>
               </Select>
             </div>
           )}
@@ -287,8 +340,8 @@ const ComposeEmailDialog = ({ entityType, entityId, scouts, templates, onSend }:
           <p className="text-xs text-muted-foreground">Variables: {TEMPLATE_VARIABLES.join(', ')}</p>
           <div><Label>Sent By <span className="text-red-500">*</span></Label>
             <Select value={sentBy} onValueChange={value => { setSentBy(value); setErrors(prev => ({ ...prev, sentBy: '' })); }}>
-              <SelectTrigger><SelectValue placeholder="Select coach" /></SelectTrigger>
-              <SelectContent>{scouts.map(s => <SelectItem key={s.scoutId} value={s.scoutId}>{s.scoutName}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="Select sender" /></SelectTrigger>
+              <SelectContent>{sendByOptions.map(o => <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>)}</SelectContent>
             </Select>
             {errors.sentBy && <p className="text-xs text-destructive mt-1">{errors.sentBy}</p>}
           </div>

@@ -61,13 +61,13 @@ const Clubs = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map(club => {
-          const contactCount = clubContacts.filter(cc => cc.clubId === club.clubId).length;
+          const contactCount = club.clubContactCount ?? 0;
           return (
             <Link key={club.clubId} to={`/clubs/${club.clubId}`}>
               <Card className="hover:border-primary/30 transition-all cursor-pointer">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                    <div className="w-14 h-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
                       {club.logoUrl
                         ? <img src={club.logoUrl} alt={club.clubName} className="w-full h-full object-cover" />
                         : <Building2 size={18} className="text-primary" />}

@@ -1,12 +1,14 @@
 // src/services/apiService.ts
 // ─────────────────────────────────────────────
-// Central Axios instance pointed at https://soccerclubbackend.onrender.com/api
+// Central Axios instance pointed at https://localhost:7001/api
 // All API calls return typed data directly (interceptor unwraps .data)
 // ─────────────────────────────────────────────
 
 import axios from 'axios';
 import type {
   Scout, Club, ClubContact, Player,
+  PlayerForPage,
+  PlayersForPageResponse,
   Review, Note, Task, TaskComment, Email, Template, Ratings,
   TaskStatus,
   TaskSource,
@@ -17,7 +19,9 @@ import type {
   SportActivity,
   ReviewActivityRating,
   Sponsor,
+  SponsorComment,
   CommercialContract,
+  Contract,
   AiPlanGeneratePayload,
   AiPlanResponse,
   AiPlanHistoryResponse,
@@ -32,6 +36,21 @@ const api = axios.create({
   baseURL: 'https://soccerclubbackend.onrender.com/api',
   headers: { 'Content-Type': 'application/json' },
 });
+
+const getCurrentAppPath = (): string => {
+  const hash = window.location.hash || '';
+  if (hash.startsWith('#/')) {
+    const hashPath = hash.slice(1);
+    return hashPath.split('?')[0] || '/';
+  }
+  return window.location.pathname || '/';
+};
+
+const toAppRoute = (path: string): string => {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  // App uses HashRouter, so prefer hash route links for hard redirects.
+  return `/#${normalized}`;
+};
 
 // =======================================================
 // Request Interceptor — attach JWT if present
@@ -64,15 +83,18 @@ api.interceptors.response.use(
   (res) => res.data,
   (err) => {
     if (err?.response?.status === 401) {
-      const currentPath = window.location.pathname;
-      if (currentPath !== '/login' && currentPath !== '/accept-invite') {
+      const currentPath = getCurrentAppPath();
+      const publicPaths = ['/login', '/accept-invite', '/signup', '/privacy-policy'];
+      if (!publicPaths.some((p) => currentPath.startsWith(p))) {
         localStorage.removeItem(TOKEN_KEY);
-        window.location.href = '/login';
+        window.location.href = toAppRoute('/login');
       }
     }
     const message = err?.response?.data?.message || err?.message || 'API Error';
+    const code = err?.response?.data?.code;
+    const requiredConsentVersion = err?.response?.data?.requiredConsentVersion;
     console.error(`[API Error] ${message}`);
-    return Promise.reject({ message, status: err?.response?.status });
+    return Promise.reject({ message, status: err?.response?.status, code, requiredConsentVersion });
   }
 );
 
@@ -83,17 +105,61 @@ api.interceptors.response.use(
 export const fetchScouts = (): Promise<Scout[]> => api.get('/Scouts');
 export const fetchClubs = (): Promise<Club[]> => api.get('/Clubs');
 export const fetchClubContacts = (): Promise<ClubContact[]> => api.get('/ClubContacts');
+export const fetchClubById = (id: string): Promise<Club> => api.get(`/Clubs/${id}`);
+export const fetchClubContactsByClub = (clubId: string): Promise<ClubContact[]> => api.get(`/ClubContacts/by-club/${clubId}`);
 export const fetchContactRoles = (): Promise<ContactRole[]> => api.get('/ContactRoles');
-export const fetchPlayers = (): Promise<Player[]> => api.get('/Players');
+export const fetchPlayers = async (): Promise<Player[]> => {
+  const response = await api.get('/Players') as any;
+
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  // Supports the current dashboard payload shape: { players, otherData }.
+  if (Array.isArray(response?.players)) {
+    return response.players;
+  }
+
+  if (Array.isArray(response?.Players)) {
+    return response.Players;
+  }
+
+  return [];
+};
+export const fetchPlayersForPage = (params?: {
+  positionCode?: string;
+  scoutId?: string;
+  sportId?: number;
+  search?: string;
+}): Promise<PlayersForPageResponse> => api.get('/Players', { params });
+export const fetchPlayerById = (id: string): Promise<any> => api.get(`/Players/${id}`);
+export const fetchPlayersSimplified = (sportId?: number): Promise<any[]> => 
+  api.get('/Players/simplified', { params: sportId ? { sportId } : {} });
 export const fetchNotes = (): Promise<Note[]> => api.get('/Notes');
 export const fetchTasks = (): Promise<Task[]> => api.get('/Tasks');
+export const fetchTasksForPage = (params?: {
+  status?: string;
+  scoutId?: string;
+  upcomingDays?: number;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<any[]> => api.get('/Tasks/page', { params });
+export const fetchTaskConfigration = (): Promise<{
+  allClubsForTask: { clubId: string; clubName: string }[];
+  allScoutForTask: { scoutId: string; scoutName: string }[];
+  allPlayerForTask: { playerId: string; playerName: string; sportId?: number; sportName: string }[];
+}> => api.get('/Tasks/configration');
 export const fetchEmails = (): Promise<Email[]> => api.get('/Emails');
+export const fetchEmailsByPlayer = (playerId: string): Promise<Email[]> => api.get(`/Emails/player/${playerId}`);
+export const fetchEmailsByClub = (clubId: string): Promise<Email[]> => api.get(`/Clubs/${clubId}/clubmails`);
 export const fetchTemplates = (): Promise<Template[]> => api.get('/Templates');
 export const fetchReviews = (): Promise<Review[]> => api.get('/Reviews');
 export const fetchReviewRatings = (): Promise<Ratings[]> => api.get('/ReviewRatings');
 export const fetchReviewActivityRatings = (): Promise<ReviewActivityRating[]> => api.get('/ReviewActivityRatings');
 export const fetchReviewActivityRatingsByReview = (reviewId: string): Promise<ReviewActivityRating[]> =>
   api.get(`/ReviewActivityRatings/review/${reviewId}`);
+export const fetchDashboardApi = (): Promise<any> => api.get('/dashboard');
 
 // =======================================================
 // SPONSOR APIs
@@ -106,6 +172,10 @@ export const updateSponsorApi = (id: string, payload: Partial<Sponsor>): Promise
   api.put(`/Sponsors/${id}`, payload);
 export const deleteSponsorApi = (id: string): Promise<void> =>
   api.delete(`/Sponsors/${id}`);
+export const fetchSponsorComments = (sponsorId: string): Promise<SponsorComment[]> =>
+  api.get(`/Sponsors/${sponsorId}/comments`);
+export const createSponsorCommentApi = (sponsorId: string, payload: { comment: string }): Promise<SponsorComment> =>
+  api.post(`/Sponsors/${sponsorId}/comments`, payload);
 
 // =======================================================
 // COMMERCIAL CONTRACT APIs
@@ -122,14 +192,38 @@ export const updateCommercialContractApi = (id: string, payload: Partial<Commerc
   api.put(`/CommercialContracts/${id}`, payload);
 export const deleteCommercialContractApi = (id: string): Promise<void> =>
   api.delete(`/CommercialContracts/${id}`);
-export const uploadContractDocumentApi = (id: string, files: FileList | File[]): Promise<{ documentPath: string }> => {
+export const uploadCommercialContractDocumentApi = (id: string, files: FileList | File[]): Promise<{ documentPath: string }> => {
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append('files', file));
   return api.post(`/CommercialContracts/${id}/upload-document`, formData);
 };
 
-export const deleteContractDocumentApi = (id: string, documentPath: string): Promise<{ documentPath: string }> =>
+export const deleteCommercialContractDocumentApi = (id: string, documentPath: string): Promise<{ documentPath: string }> =>
   api.delete(`/CommercialContracts/${id}/documents`, { params: { documentPath } });
+
+export const fetchContracts = (): Promise<Contract[]> => api.get('/Contracts');
+export const fetchProfileContractsByClub = (clubId: string): Promise<Contract[]> =>
+  api.get(`/Contracts/by-club/${clubId}`);
+export const fetchProfileContractsByPlayer = (playerId: string): Promise<Contract[]> =>
+  api.get(`/Contracts/by-player/${playerId}`);
+export const fetchContractAlerts = (params?: {
+  contractType?: string;
+  daysAhead?: number;
+}): Promise<Contract[]> => api.get('/Contracts/alerts', { params });
+export const createContractApi = (payload: Omit<Contract, 'id' | 'createdAt' | 'updatedAt' | 'expiryStatus'>): Promise<Contract> =>
+  api.post('/Contracts', payload);
+export const updateContractApi = (id: string, payload: Partial<Omit<Contract, 'id' | 'createdAt' | 'updatedAt' | 'expiryStatus'>>): Promise<Contract> =>
+  api.put(`/Contracts/${id}`, payload);
+export const deleteContractApi = (id: string): Promise<void> =>
+  api.delete(`/Contracts/${id}`);
+export const uploadContractDocumentApi = (id: string, files: FileList | File[]): Promise<{ documentPath: string }> => {
+  const formData = new FormData();
+  Array.from(files).forEach((file) => formData.append('files', file));
+  return api.post(`/Contracts/${id}/upload-document`, formData);
+};
+
+export const deleteContractDocumentApi = (id: string, documentPath: string): Promise<{ documentPath: string }> =>
+  api.delete(`/Contracts/${id}/documents`, { params: { documentPath } });
 
 
 // =======================================================
@@ -137,19 +231,16 @@ export const deleteContractDocumentApi = (id: string, documentPath: string): Pro
 // =======================================================
 export const post = <T>(url: string, data: any): Promise<T> => { return api.post(url, data); };
 
-const POWER_AUTOMATE_FLOW_URL = 'https://default4b9f13b4233941df97ccedf0d25c58.7c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/1c19f6cfa3a2446da68a02be428b70f0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=MC6pqYcVWraPeFtcdHviSjM0T-CaZ7VA9ZxSketLTik'; // Replace with your actual Power Automate flow URL
-
-export const sendPowerAutomateEmail = (to: string, subject: string, body: string): Promise<object> => {
-  return axios.post(POWER_AUTOMATE_FLOW_URL, {
-    to,
-    subject,
-    body,
-  }, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  }).then(res => res.data as object);
-};
+// Email sending should be handled by the backend API. Frontend will POST an email record
+// to the server which will send the email using the configured server-side provider.
+export const createEmailApi = (payload: {
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  sentByScoutId?: string | null;
+  playerId?: string | null;
+  clubId?: string | null;
+}): Promise<any> => api.post('/Emails', payload);
 
 
 // export const uploadPlayerImageApi = async (playerId: string, file: File) => {
@@ -166,22 +257,19 @@ export const sendPowerAutomateEmail = (to: string, subject: string, body: string
 export const uploadPlayerImageApi = async (
   playerId: string,
   file: File
-): Promise<{ imageUrl: string }> => {
+): Promise<{ imageUrl: string; player?: any }> => {
 
   const formData = new FormData();
-  formData.append('file', file);
+  // Match server-side DTO property names (PlayerId, File)
+  formData.append('PlayerId', playerId);
+  formData.append('File', file);
 
-  const res = await api.post<{ imageUrl: string }>(
-    `/Players/upload-image/${playerId}`,
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }
+  const res = await api.post<{ imageUrl: string; player?: any }>(
+    `/Players/playerprofileimg`,
+    formData
   );
 
-  return res as unknown as { imageUrl: string };
+  return res as unknown as { imageUrl: string; player?: any };
 };
 
 
@@ -373,6 +461,31 @@ export const createPlayerApi = (payload: {
   profileImage?: string
   player_email:string
   sportId?: number
+  // optional extended profile fields
+  gender?: string
+  place_of_birth?: string
+  primary_language?: string
+  secondary_language?: string
+  profile_visibility?: boolean
+  phone_number?: string
+  alternate_phone?: string
+  emergency_contact_name?: string
+  emergency_contact_number?: string
+  address_line1?: string
+  address_line2?: string
+  city?: string
+  state?: string
+  country?: string
+  postal_code?: string
+  secondary_position?: string
+  jersey_number?: number
+  experience_years?: number
+  playing_level?: string
+  dominant_side?: string
+  fitness_level?: string
+  injury_status?: string
+  coach_email?: string
+  coach_phone?: string
 }): Promise<Player> =>
   api.post('/Players', payload);
 
@@ -481,6 +594,9 @@ export const deleteDocumentApi = (id: string) =>
 export const getDocumentsApi = (): Promise<PlayerDocument[]> =>
   api.get('/Documents');
 
+export const downloadDocumentApi = (id: string): Promise<{ documentId: string; documentName: string; documentType: string; fileData: string | null }> =>
+  api.get(`/Documents/${id}/download`);
+
 
 // =======================================================
 // SCOUT APIs
@@ -501,6 +617,7 @@ export const createScoutApi = (payload: {
   postalCode?: string;
   country?: string;
   lockedAreas?: string;
+  sportId?: number;
   isShowPlayer?: boolean;
 }): Promise<Scout> =>
   api.post('/Scouts', payload);
@@ -520,6 +637,7 @@ export const updateScoutApi = (
     state?: string;
     postalCode?: string;
     country?: string;
+    sportId?: number;
     lockedAreas?: string;
     isShowPlayer?: boolean;
   }>
@@ -535,7 +653,7 @@ export const deleteScoutApi = (id: string): Promise<void> =>
 export interface InviteUserPayload {
   email: string;
   fullName: string;
-  role: 'Admin' | 'Player' | 'Scout';
+  role: 'Admin' | 'Player' | 'Scout' | 'Coach';
 }
 
 export interface LoginPayload {
@@ -547,18 +665,109 @@ export interface AcceptInvitePayload {
   inviteToken: string;
   password: string;
   confirmPassword: string;
+  consentGiven: boolean;
 }
 
 export interface AuthUser {
   id: string;
+  scoutId?: string;
   email: string;
   fullName: string;
   role: string;
+  userStatus: string;
+  consentGiven: boolean;
+  consentGivenAt?: string;
+  consentVersion: string;
+  isActive: boolean;
 }
+
+export interface PlayerSignupPayload {
+  signupRole?: 'Player';
+  email: string;
+  fullName: string;
+  password: string;
+  confirmPassword: string;
+  consentGiven: boolean;
+  dateOfBirth?: string;
+  nationality?: string;
+  heightCm?: number;
+  weightKg?: number;
+  currentClub?: string;
+  contractStatus?: string;
+  agentName?: string;
+  contactInfo?: string;
+  profileImage?: string;
+  sportId?: number;
+  pincode?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+}
+
+export interface ScoutSignupPayload {
+  signupRole?: 'Scout';
+  email: string;
+  fullName: string;
+  password: string;
+  confirmPassword: string;
+  consentGiven: boolean;
+  scoutId?: string;
+  roleName?: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  sportId?: number;
+  profileImage?: string;
+}
+
+export interface PendingUser {
+  id: string;
+  email: string;
+  fullName: string;
+  signupRole: string;
+  userStatus: string;
+  createdAt: string;
+}
+
+export const signupPlayerApi = (payload: PlayerSignupPayload): Promise<{ message: string }> =>
+  api.post('/auth/signup', { ...payload, signupRole: 'Player' });
+
+export const signupScoutApi = (payload: ScoutSignupPayload): Promise<{ message: string }> =>
+  api.post('/auth/signup', { ...payload, signupRole: 'Scout' });
+
+export const uploadSignupProfileImageApi = async (file: File): Promise<{ imageUrl: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await api.post<{ imageUrl: string }>(
+    '/auth/upload-signup-image',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+
+  return res as unknown as { imageUrl: string };
+};
+
+export const getPendingUsersApi = (): Promise<PendingUser[]> =>
+  api.get('/auth/pending-users');
+
+export const approveRejectUserApi = (payload: { userId: string; action: 'Approved' | 'Rejected' }): Promise<{ message: string }> =>
+  api.post('/auth/approve-reject', payload);
 
 export interface AuthResponse {
   token: string;
   user: AuthUser;
+  requiresConsent: boolean;
+  requiredConsentVersion?: string;
 }
 
 export const loginApi = (payload: LoginPayload): Promise<AuthResponse> =>
@@ -568,10 +777,25 @@ export const acceptInviteApi = (payload: AcceptInvitePayload): Promise<AuthRespo
   api.post('/auth/accept-invite', payload);
 
 export const inviteUserApi = (payload: InviteUserPayload): Promise<{ message: string }> =>
-  api.post('/auth/invite-user', payload);
+  api.post('/auth/invite', payload);
 
 export const getMeApi = (): Promise<AuthUser> =>
   api.get('/auth/me');
+
+export const reConsentApi = (payload: { consentGiven: boolean }): Promise<{ message: string; consentVersion: string }> =>
+  api.post('/consent/re-consent', payload);
+
+export const withdrawConsentApi = (payload: { confirmWithdraw: boolean }): Promise<{ message: string }> =>
+  api.post('/consent/withdraw', payload);
+
+export const getConsentHistoryApi = (userId: string): Promise<Array<{
+  id: string;
+  userId: string;
+  consentGiven: boolean;
+  consentVersion: string;
+  consentSource: string;
+  createdAt: string;
+}>> => api.get(`/consent/history/${userId}`);
 
 // =======================================================
 // COMPANY PROFILE APIs
@@ -664,6 +888,7 @@ export const createPlayerPositionApi = (payload: {
   positionCode: string;
   positionName: string;
   description?: string;
+  sportId?: number;
 }): Promise<PlayerPosition> =>
   api.post('/PlayerPositions', payload);
 
@@ -673,6 +898,7 @@ export const updatePlayerPositionApi = (
     positionCode: string;
     positionName: string;
     description?: string;
+    sportId?: number;
   }
 ): Promise<PlayerPosition> =>
   api.put(`/PlayerPositions/${id}`, payload);
@@ -730,5 +956,8 @@ export const fetchScoutsBySportApi = (sportId: number): Promise<Scout[]> =>
 
 export const fetchPlayerPositionsBySportApi = (sportId: number): Promise<PlayerPosition[]> =>
   api.get(`/PlayerPositions/BySport/${sportId}`);
+
+export const sendReviewFollowupEmailApi = (reviewId: string): Promise<any> =>
+  api.post(`/Tasks/send-followup/${reviewId}`);
 
 export default api;

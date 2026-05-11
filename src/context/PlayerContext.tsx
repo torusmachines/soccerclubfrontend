@@ -1,23 +1,30 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
-import { Player, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template, ContactRole, PlayerPosition, Sport, SportActivity } from '@/types';
+import { useLocation } from 'react-router-dom';
+import { Player, PlayerForPage, Review, Scout, PlayerDocument, Club, ClubContact, Note, Task, Email, Template, ContactRole, PlayerPosition, Sport, SportActivity } from '@/types';
 import {
   createClub, updateClubApi, deleteClubApi, uploadClubLogoApi, fetchTemplates,
+  fetchEmailsByPlayer, fetchEmailsByClub,
+  fetchScouts,
+  fetchClubs,
+  fetchPlayers,
   createClubContactApi, updateClubContactApi, deleteClubContactApi,
   createContactRoleApi, updateContactRoleApi, deleteContactRoleApi,
   fetchPlayerPositions, createPlayerPositionApi, updatePlayerPositionApi, deletePlayerPositionApi,
-  fetchSportsApi, createSportApi, updateSportApi, deleteSportApi,
-  fetchSportActivitiesApi, createSportActivityApi, updateSportActivityApi, deleteSportActivityApi,
+  fetchSportsApi, fetchSportActivitiesApi,
+  createSportApi, updateSportApi, deleteSportApi,
+  createSportActivityApi, updateSportActivityApi, deleteSportActivityApi,
   createTemplateApi,
   updateTemplateApi,
   deleteTemplateApi, createPlayerApi,
   createTaskApi,
+  sendReviewFollowupEmailApi,
   updatePlayerApi,
   deletePlayerApi, createReviewApi, createReviewRatingApi, createReviewActivityRatingsApi, createReviewSkillDetailApi,
   createNoteApi, updateNoteApi, deleteNoteApi,
   updateTaskApi, deleteTaskApi,
   updateEmailApi,
   deleteEmailApi,
-  sendPowerAutomateEmail,
+  createEmailApi,
   createDocumentApi,
   deleteDocumentApi,
   updateDocumentApi,
@@ -25,15 +32,16 @@ import {
   uploadPlayerImageApi,
   createScoutApi,
   updateScoutApi,
-  deleteScoutApi,
-  fetchScouts
+  deleteScoutApi
 } from '@/services/apiService';
 import {
   initialPlayers, initialReviews, scouts as mockScouts,
   initialClubs, initialClubContacts, initialContactRoles, initialPlayerPositions, initialNotes, initialTasks, initialEmails, initialTemplates,
 } from '@/data/mockData';
+import { useAuth } from '@/context/AuthContext';
 import { addMonths, differenceInDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { getAverageRatings, calculateOverallAverage, buildRatingsFromActivityRows } from '@/lib/playerUtils';
 import { getContractExpiringMonths } from '@/lib/settingsUtils';
@@ -69,10 +77,10 @@ interface AppContextType {
   deleteClubContact: (id: string) => void;
   addNote: (n: Note) => Promise<void>;
   updateNote: (n: Note) => Promise<void>;
-  deleteNote: (id: string) => Promise<void>;
+  deleteNote: (id: string, noteTitle?: string) => Promise<void>;
   addTask: (t: Task) => void;
-  updateTask: (t: Task) => void;
-  deleteTask: (id: string) => Promise<void>;
+  updateTask: (t: Task) => Promise<boolean>;
+  deleteTask: (id: string) => Promise<boolean>;
   addTemplate: (t: Template) => void;
   updateTemplate: (t: Template) => void;
   deleteTemplate: (id: string) => void;
@@ -96,6 +104,9 @@ interface AppContextType {
   updateSportActivity: (sa: SportActivity) => Promise<void>;
   deleteSportActivity: (id: number) => Promise<void>;
   loadDocuments: () => Promise<void>;
+  loadEmailsByPlayer: (playerId: string) => Promise<void>;
+  loadEmailsByClub: (clubId: string) => Promise<void>;
+  getPlayersForPage: () => PlayerForPage[];
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -116,10 +127,76 @@ export const usePlayerContext = () => {
 
 export const useAppContext = usePlayerContext;
 
+// Maps the C# Player entity response back to the frontend Player shape
+const mapApiPlayerToPlayer = (p: any): Player => ({
+  playerId: p.playerId ?? p.id ?? '',
+  playerName: p.playerName ?? p.fullName ?? '',
+  clubName: p.clubName ?? '',
+  overallRating: Number.isFinite(Number(p.overallRating)) ? Number(p.overallRating) : undefined,
+  agencyContractStatus: p.agencyContractStatus ?? p.contractStatus ?? '',
+  id: String(p.playerId ?? p.id ?? ''),
+  fullName: p.fullName ?? p.playerName ?? '',
+  dateOfBirth: p.dateOfBirth ?? '',
+  nationality: p.nationality ?? '',
+  position: p.positionCode ?? p.position ?? '',
+  preferredFoot: p.preferredFoot ?? '',
+  heightCm: p.heightCm ?? 0,
+  weightKg: p.weightKg ?? 0,
+  currentClub: p.currentClubId ?? p.currentClub ?? '',
+  contractStart: p.contractStartDate ?? p.contractStart ?? '',
+  contractEnd: p.contractEndDate ?? p.contractEnd ?? '',
+  contractStatus: p.contractStatus ?? '',
+  agentName: p.agentName ?? '',
+  agentContact: p.agentContact ?? '',
+  createdAt: p.createdAt ?? '',
+  updatedAt: p.updatedAt ?? '',
+  agent_scout_id: p.agentScoutId ?? p.agent_scout_id ?? '',
+  contact_info: p.contactInfo ?? p.contact_info ?? '',
+  profileImage: p.playerProfileImage ?? p.profileImageUrl ?? p.profileImage ?? '',
+  player_email: p.playerEmail ?? p.player_email ?? '',
+  sportId: p.sportId,
+  contractStartWithCoach: p.contractStartWithCoach ?? '',
+  contractEndWithCoach: p.contractEndWithCoach ?? '',
+  addressLine1: p.addressLine1 ?? '',
+  addressLine2: p.addressLine2 ?? '',
+  userStatus: p.userStatus ?? '',
+  scoutId: p.scoutId ?? undefined,
+  scoutName: p.scoutName ?? undefined,
+  // extended profile fields
+  gender: p.gender ?? undefined,
+  placeOfBirth: p.place_of_birth ?? p.placeOfBirth ?? undefined,
+  primaryLanguage: p.primary_language ?? p.primaryLanguage ?? undefined,
+  secondaryLanguage: p.secondary_language ?? p.secondaryLanguage ?? undefined,
+  profileVisibility: p.profile_visibility ?? p.profileVisibility ?? undefined,
+  phoneNumber: p.phone_number ?? p.phoneNumber ?? undefined,
+  alternatePhone: p.alternate_phone ?? p.alternatePhone ?? undefined,
+  emergencyContactName: p.emergency_contact_name ?? p.emergencyContactName ?? undefined,
+  emergencyContactNumber: p.emergency_contact_number ?? p.emergencyContactNumber ?? undefined,
+  city: p.city ?? undefined,
+  state: p.state ?? undefined,
+  country: p.country ?? undefined,
+  postalCode: p.postal_code ?? p.postalCode ?? undefined,
+  secondaryPosition: p.secondary_position ?? p.secondaryPosition ?? undefined,
+  jerseyNumber: p.jersey_number ?? p.jerseyNumber ?? undefined,
+  experienceYears: p.experience_years ?? p.experienceYears ?? undefined,
+  playingLevel: p.playing_level ?? p.playingLevel ?? undefined,
+  dominantSide: p.dominant_side ?? p.dominantSide ?? undefined,
+  fitnessLevel: p.fitness_level ?? p.fitnessLevel ?? undefined,
+  injuryStatus: p.injury_status ?? p.injuryStatus ?? undefined,
+  coachEmail: p.coach_email ?? p.coachEmail ?? undefined,
+  coachPhone: p.coach_phone ?? p.coachPhone ?? undefined,
+});
+
 export const PlayerProvider = ({ children }: { children: ReactNode }) => {
+  const location = useLocation();
+  // Support both BrowserRouter and HashRouter: prefer hash route when present
+  const rawHash = location.hash || '';
+  const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash;
+  const pathname = hashPath || location.pathname || '/';
 
   // ── State — seeded directly from API data (loaded before this mounts) ────
-  const [players, setPlayers] = useState<Player[]>(initialPlayers);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playersForPage, setPlayersForPage] = useState<PlayerForPage[]>(initialPlayers);
   const [reviews, setReviews] = useState<Review[]>(initialReviews);
   const [scouts, setScouts] = useState<Scout[]>(mockScouts);
   const [documents, setDocuments] = useState<PlayerDocument[]>([]);
@@ -134,6 +211,189 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   const [emails, setEmails] = useState<Email[]>(initialEmails);
   const [templates, setTemplates] = useState<Template[]>(initialTemplates);
 
+  const playersLoadedRef = useRef(false);
+  const clubsLoadedRef = useRef(false);
+  const scoutsSportsLoadedRef = useRef(false);
+  const templatesLoadedRef = useRef(false);
+
+  const isClubsListRoute = pathname === '/clubs' || pathname === '/clubs/';
+  const isClubProfileRoute = /^\/clubs\/[^/]+/.test(pathname);
+  const isTasksRoute = pathname === '/tasks';
+  const isScoutsRoute = pathname === '/scouts';
+  const isTemplatesRoute = pathname === '/templates';
+  const isMatchingRoute = pathname === '/matching';
+  const isContractsRoute = pathname === '/contracts';
+  const isCommercialRoute = pathname === '/commercial';
+  const isSettingsSportsRoute = pathname === '/settings/sports-management' || pathname === '/settings/sports-management/';
+
+  useEffect(() => {
+    if (playersLoadedRef.current) return;
+
+    // Never load players when viewing a single club profile — only club API should be called
+    if (isClubProfileRoute) return;
+
+    const shouldLoadPlayers =
+      isMatchingRoute ||
+      isCommercialRoute ||
+      isContractsRoute;
+
+    // Debug and safety: if this looks like a club profile path, always skip
+    // loading players here (ClubProfile should only call Club API).
+    if (isClubProfileRoute) {
+      console.debug('PlayerContext: skipping players load for club profile', { pathname });
+      return;
+    }
+
+    console.debug('PlayerContext: players load check', { pathname, isClubProfileRoute, isClubsListRoute, isMatchingRoute, isCommercialRoute, shouldLoadPlayers });
+
+    if (!shouldLoadPlayers) return;
+
+    let cancelled = false;
+
+    const loadPlayers = async () => {
+      try {
+        const playersData = await fetchPlayers();
+        if (cancelled) return;
+
+        const mappedPlayers = Array.isArray(playersData)
+          ? playersData.map(mapApiPlayerToPlayer)
+          : [];
+
+        setPlayers(mappedPlayers);
+        playersLoadedRef.current = true;
+      } catch (err) {
+        console.error('Failed to load players in PlayerContext', err);
+      }
+    };
+
+    loadPlayers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isMatchingRoute,
+    isClubsListRoute,
+    isCommercialRoute,
+    isContractsRoute,
+    isClubProfileRoute,
+  ]);
+
+  useEffect(() => {
+    if (clubsLoadedRef.current) return;
+
+    const shouldLoadClubData = isClubsListRoute || isCommercialRoute || isContractsRoute;
+
+    if (!shouldLoadClubData) return;
+
+    let cancelled = false;
+
+    const loadClubData = async () => {
+      try {
+        const clubsData = await fetchClubs();
+
+        if (cancelled) return;
+        setClubs(Array.isArray(clubsData) ? clubsData : []);
+        // clubContacts are now loaded on-demand at the Club -> Contacts tab
+        clubsLoadedRef.current = true;
+      } catch (err) {
+        console.error('Failed to load clubs in PlayerContext', err);
+      }
+    };
+
+    loadClubData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isClubsListRoute, isCommercialRoute, isContractsRoute]);
+
+  useEffect(() => {
+    if (scoutsSportsLoadedRef.current) return;
+
+    const shouldLoadScouts =
+      isScoutsRoute ||
+      isMatchingRoute;
+
+    if (!shouldLoadScouts) return;
+
+    let cancelled = false;
+
+    const loadScouts = async () => {
+      try {
+        const scoutsData = await fetchScouts();
+        if (cancelled) return;
+        setScouts(Array.isArray(scoutsData) ? scoutsData : []);
+        scoutsSportsLoadedRef.current = true;
+      } catch (err) {
+        console.error('Failed to load scouts in PlayerContext', err);
+      }
+    };
+
+    loadScouts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isScoutsRoute, isMatchingRoute]);
+
+  useEffect(() => {
+    const shouldLoadSports =
+      isScoutsRoute ||
+      isMatchingRoute ||
+      isSettingsSportsRoute;
+
+    if (!shouldLoadSports) return;
+
+    let cancelled = false;
+
+    const loadSports = async () => {
+      try {
+        const [sportsData, sportActivitiesData] = await Promise.all([
+          fetchSportsApi(),
+          fetchSportActivitiesApi(),
+        ]);
+
+        if (cancelled) return;
+
+        setSports(Array.isArray(sportsData) ? sportsData : []);
+        setSportActivities(Array.isArray(sportActivitiesData) ? sportActivitiesData : []);
+      } catch (err) {
+        console.error('Failed to load sports in PlayerContext', err);
+      }
+    };
+
+    loadSports();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isScoutsRoute, isMatchingRoute, isSettingsSportsRoute]);
+
+  useEffect(() => {
+    if (templatesLoadedRef.current || !isTemplatesRoute) return;
+
+    let cancelled = false;
+
+    const loadTemplates = async () => {
+      try {
+        const templatesData = await fetchTemplates();
+        if (cancelled) return;
+
+        setTemplates(Array.isArray(templatesData) ? templatesData : []);
+        templatesLoadedRef.current = true;
+      } catch (err) {
+        console.error('Failed to load templates in PlayerContext', err);
+      }
+    };
+
+    loadTemplates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isTemplatesRoute]);
+
   const loadDocuments = async () => {
     try {
       const data = await getDocumentsApi();
@@ -143,7 +403,30 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const loadEmailsByPlayer = useCallback(async (playerId: string) => {
+    try {
+      if (!playerId) return;
+      const data = await fetchEmailsByPlayer(playerId);
+      setEmails(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load player emails', err);
+    }
+  }, []);
+
+  const loadEmailsByClub = useCallback(async (clubId: string) => {
+    try {
+      if (!clubId) return;
+      // fetch emails specifically for this club
+      const data = await fetchEmailsByClub(clubId);
+      setEmails(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load club emails', err);
+    }
+  }, []);
+
   const { toast } = useToast();
+
+  const queryClient = useQueryClient();
 
   const showSuccess = (title: string, description?: string) => {
     toast({
@@ -161,6 +444,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  const { user } = useAuth();
+
   const showUpdate = (title: string, description?: string) => {
     toast({
       title,
@@ -169,15 +454,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
-  const sendHtmlEmail = async (recipient: string, subject: string, htmlBody: string) => {
-    if (!recipient) return;
-    try {
-      await sendPowerAutomateEmail(recipient, subject, htmlBody);
-      showSuccess('Email Sent', 'Task notification email sent successfully.');
-    } catch (err) {
-      console.error('Power Automate task email failed', err);
-    }
-  };
+  // Email sending is now handled by the backend. Frontend will create email records
+  // via `createEmailApi` which causes the server to send the email.
 
   const generateAutoTasks = useCallback(() => {
     const now = new Date();
@@ -203,7 +481,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
               description: `Contract ends ${p.contractEnd}. Begin renewal discussions.`,
               playerId: p.id,
               clubId: undefined,
-              assignedToScoutId: p.agent_scout_id,   // ← no hardcoded fallback
+              assignedToScoutId: String(user?.loginUser?.id ?? user?.id ?? p.agent_scout_id ?? ''),
               dueDate: p.contractEnd,
               status: 'open',
               createdAt: now.toISOString(),
@@ -214,67 +492,37 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
       });
 
       // ── 2. Note follow-up (all categories) ───────────────────────────────
-      notes.forEach(n => {
-        if (!n.followUpDate) return;
+      // notes.forEach(n => {
+      //   if (!n.followUpDate) return;
 
-        // source reflects the note category
-        const source =
-          n.category === 'medical' ? 'medical' :
-            n.category === 'private' ? 'personal' :
-              'note';
+      //   // source reflects the note category
+      //   const source =
+      //     n.category === 'medical' ? 'medical' :
+      //       n.category === 'private' ? 'personal' :
+      //         'note';
 
-        const exists = prevTasks.some(
-          t => t.source === source && t.description.includes(n.noteId) && t.status === 'open'
-        );
-        if (!exists) {
-          const player = players.find(p => String(p.id) === String(n.playerId));
-          const club = clubs.find(c => c.clubId === n.clubId);
-          const entityName = player?.fullName || club?.clubName || 'Unknown';
+      //   const exists = prevTasks.some(
+      //     t => t.source === source && t.description.includes(n.noteId) && t.status === 'open'
+      //   );
+      //   if (!exists) {
+      //     const player = players.find(p => String(p.id) === String(n.playerId));
+      //     const club = clubs.find(c => c.clubId === n.clubId);
+      //     const entityName = player?.fullName || club?.clubName || 'Unknown';
 
-          newTasks.push({
-            taskId: crypto.randomUUID(),
-            title: `Follow up: ${n.topic}`,
-            description: `Follow up on note ${n.noteId} for ${entityName}.`,
-            playerId: n.playerId,
-            clubId: n.clubId,
-            assignedToScoutId: n.createdByScoutId,
-            dueDate: n.followUpDate,
-            status: 'open',
-            createdAt: now.toISOString(),
-            source,   // 'medical' | 'personal' | 'note'
-          });
-        }
-      });
-
-      // ── 3. Review skill follow-up ─────────────────────────────────────────
-      reviews.forEach(r => {
-        if (!r.revSkillDetails) return;
-        Object.entries(r.revSkillDetails).forEach(([skill, detail]) => {
-          if (!detail.followUpDate) return;
-          const exists = prevTasks.some(
-            t =>
-              t.source === 'review' &&
-              t.description.includes(r.reviewId) &&
-              t.description.includes(skill) &&
-              t.status === 'open'
-          );
-          if (!exists) {
-            const player = players.find(p => String(p.id) === String(r.playerId));
-            newTasks.push({
-              taskId: crypto.randomUUID(),
-              title: `Review follow-up: ${skill} - ${player?.fullName || 'Unknown'}`,
-              description: `Follow up on ${skill} from review ${r.reviewId}.`,
-              playerId: r.playerId,
-              clubId: undefined,
-              assignedToScoutId: r.scoutId,
-              dueDate: detail.followUpDate,
-              status: 'open',
-              createdAt: now.toISOString(),
-              source: 'review',
-            });
-          }
-        });
-      });
+      //     newTasks.push({
+      //       taskId: crypto.randomUUID(),
+      //       title: `Note Follow up: ${n.topic}`,
+      //       description: `Follow up on note ${n.noteId} for ${entityName}.`,
+      //       playerId: n.playerId,
+      //       clubId: n.clubId,
+      //       assignedToScoutId: String(user?.id ?? n.createdByScoutId ?? ''),
+      //       dueDate: n.followUpDate,
+      //       status: 'open',
+      //       createdAt: now.toISOString(),
+      //       source,   // 'medical' | 'personal' | 'note'
+      //     });
+      //   }
+      // });
 
       // ── 4. Performance issue (avg rating < 3) ────────────────────────────
       players.forEach(p => {
@@ -293,7 +541,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
               description: `Overall rating is ${avg.toFixed(1)}/5. Review and update development plan.`,
               playerId: p.id,
               clubId: undefined,
-              assignedToScoutId: p.agent_scout_id,
+              assignedToScoutId: String(user?.loginUser?.id ?? user?.id ?? p.agent_scout_id ?? ''),
               dueDate: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
               status: 'open',
               createdAt: now.toISOString(),
@@ -315,40 +563,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
     generateAutoTasks();
   }, []);
 
-  useEffect(() => {
-    const loadScouts = async () => {
-      try {
-        const data = await fetchScouts();
-        setScouts(data);
-      } catch (err) {
-        console.error("Failed to load scouts", err);
-        // Keep mock data as fallback
-      }
-    };
-    loadScouts();
-  }, []);
-
-  useEffect(() => {
-    const loadSports = async () => {
-      try {
-        const sportsData = await fetchSportsApi();
-        setSports(sportsData);
-      } catch (err) {
-        console.error("Failed to load sports", err);
-      }
-    };
-    const loadSportActivities = async () => {
-      try {
-        const activitiesData = await fetchSportActivitiesApi();
-        setSportActivities(activitiesData);
-      } catch (err) {
-        console.error("Failed to load sport activities", err);
-      }
-    };
-    loadSports();
-    loadSportActivities();
-  }, []);
-
+  // Scouts/sports are loaded lazily by pages that need them.
   useEffect(() => {
     if (sportActivities.length === 0 || reviews.length === 0) return;
 
@@ -375,64 +590,11 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
   return (
     <AppContext.Provider value={{
       players, reviews, scouts, documents, clubs, clubContacts, contactRoles, playerPositions, sports, sportActivities,
-      notes, tasks, emails, templates, loadDocuments,
+      notes, tasks, emails, templates, loadDocuments, loadEmailsByPlayer, loadEmailsByClub,
 
 
-      // ===========================================================
-      // ===========================================================
-
-
-      // addPlayer: async (p, imageFile) => {
-      //   try {
-      //     // Step 1: Create player without image
-      //     const created = await createPlayerApi({
-      //       fullName: p.fullName,
-      //       dateOfBirth: p.dateOfBirth,
-      //       nationality: p.nationality,
-      //       position: p.position,
-      //       preferredFoot: p.preferredFoot,
-      //       heightCm: p.heightCm,
-      //       weightKg: p.weightKg,
-      //       currentClub: p.currentClub,
-      //       contractStart: p.contractStart,
-      //       contractEnd: p.contractEnd,
-      //       agentName: p.agentName,
-      //       agent_scout_id: p.agent_scout_id,
-      //       contact_info: p.contact_info,
-      //       // Don't send image in initial creation
-      //       profileImage: undefined
-      //     });
-
-      //     // Step 2: If image file is provided, upload it
-      //     if (imageFile) {
-      //       try {
-      //         const uploadResult = await uploadPlayerImageApi(created.id, imageFile);
-
-      //         // Step 3: Update player with image URL
-      //         const updatedPlayer = await updatePlayerApi(created.id, {
-      //           profileImage: uploadResult.imageUrl
-      //         });
-
-      //         setPlayers(prev => [...prev, updatedPlayer]);
-      //         showSuccess("Player Created", `${updatedPlayer.fullName} added successfully with image`);
-      //       } catch (uploadErr) {
-      //         console.error("Image upload failed", uploadErr);
-      //         // Still add player even if image upload fails
-      //         setPlayers(prev => [...prev, created]);
-      //         showSuccess("Player Created", `${created.fullName} added successfully (image upload failed)`);
-      //       }
-      //     } else {
-      //       setPlayers(prev => [...prev, created]);
-      //       showSuccess("Player Created", `${created.fullName} added successfully`);
-      //     }
-
-      //   } catch (err) {
-      //     console.error("Create player API failed", err);
-      //     showError("Error", "Failed to create player");
-      //     // fallback (optional)
-      //     // setPlayers(prev => [...prev, p]);
-      //   }
-      // },
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addPlayer: async (p, imageFile) => {
         try {
@@ -451,46 +613,58 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             agent_scout_id: p.agent_scout_id,
             contact_info: p.contact_info,
             profileImage: undefined,
-            player_email: p.player_email,
+            player_email: (p as any).player_email ?? (p as any).playerEmail ?? (p as any).playerEmail ?? undefined,
             sportId: p.sportId,
             contractStartWithCoach: p.contractStartWithCoach,
             contractEndWithCoach: p.contractEndWithCoach
+            ,
+            // extended profile fields (accept either camelCase or snake_case from UI)
+            gender: (p as any).gender ?? (p as any).gender ?? undefined,
+            place_of_birth: (p as any).place_of_birth ?? (p as any).placeOfBirth ?? undefined,
+            primary_language: (p as any).primary_language ?? (p as any).primaryLanguage ?? undefined,
+            secondary_language: (p as any).secondary_language ?? (p as any).secondaryLanguage ?? undefined,
+            profile_visibility: (p as any).profile_visibility ?? (p as any).profileVisibility ?? undefined,
+            phone_number: (p as any).phone_number ?? (p as any).phoneNumber ?? undefined,
+            alternate_phone: (p as any).alternate_phone ?? (p as any).alternatePhone ?? undefined,
+            emergency_contact_name: (p as any).emergency_contact_name ?? (p as any).emergencyContactName ?? undefined,
+            emergency_contact_number: (p as any).emergency_contact_number ?? (p as any).emergencyContactNumber ?? undefined,
+            address_line1: (p as any).address_line1 ?? (p as any).addressLine1 ?? undefined,
+            address_line2: (p as any).address_line2 ?? (p as any).addressLine2 ?? undefined,
+            city: (p as any).city ?? undefined,
+            state: (p as any).state ?? undefined,
+            country: (p as any).country ?? undefined,
+            postal_code: (p as any).postal_code ?? (p as any).postalCode ?? undefined,
+            secondary_position: (p as any).secondary_position ?? (p as any).secondaryPosition ?? undefined,
+            jersey_number: (p as any).jersey_number ?? (p as any).jerseyNumber ?? undefined,
+            experience_years: (p as any).experience_years ?? (p as any).experienceYears ?? undefined,
+            playing_level: (p as any).playing_level ?? (p as any).playingLevel ?? undefined,
+            dominant_side: (p as any).dominant_side ?? (p as any).dominantSide ?? undefined,
+            fitness_level: (p as any).fitness_level ?? (p as any).fitnessLevel ?? undefined,
+            injury_status: (p as any).injury_status ?? (p as any).injuryStatus ?? undefined,
+            coach_email: (p as any).coach_email ?? (p as any).coachEmail ?? undefined,
+            coach_phone: (p as any).coach_phone ?? (p as any).coachPhone ?? undefined
           });
 
           console.log("Created:", created);
 
-          let finalPlayer = created;
+          let finalPlayer = mapApiPlayerToPlayer(created);
 
           if (imageFile) {
             try {
-              const uploadResult = await uploadPlayerImageApi(created.id, imageFile);
+              const rawUploadId = (created && (created.playerId ?? created.id)) || finalPlayer.id;
+              const uploadTargetId = String(rawUploadId);
+              const uploadResult = await uploadPlayerImageApi(uploadTargetId, imageFile);
 
-              // finalPlayer = await updatePlayerApi(created.id, {
-              //   profileImage: uploadResult.imageUrl
-              // });
-              finalPlayer = await updatePlayerApi(created.id, {
-                ...created, // ✅ keep all existing data
+              finalPlayer = mapApiPlayerToPlayer(await updatePlayerApi(finalPlayer.id, {
+                ...finalPlayer,
                 profileImage: uploadResult.imageUrl
-              });
+              }));
             } catch (err) {
               console.error("Image upload failed", err);
             }
           }
 
           setPlayers(prev => [...prev, finalPlayer]);
-
-          // try {
-          //   const recipient = finalPlayer.player_email || '';
-          //   if (recipient) {
-          //     const emailSubject = `New player created: ${finalPlayer.fullName}`;
-          //     const emailBody = `A new player has been created with the following details:\n\nName: ${finalPlayer.fullName}\nEmail: ${finalPlayer.player_email || 'N/A'}\nClub: ${finalPlayer.currentClub}\nPosition: ${finalPlayer.position}\n\nPlease review the new player in the application.`;
-          //     await sendPowerAutomateEmail(recipient, emailSubject, emailBody);
-          //   } else {
-          //     console.warn('Skipping email send because player has no email address');
-          //   }
-          // } catch (err) {
-          //   console.error("Power Automate email failed", err);
-          // }
 
           showSuccess("Player Created", `${finalPlayer.fullName} added successfully`);
 
@@ -502,25 +676,51 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
 
       updatePlayer: async (p) => {
         try {
-          const updated = await updatePlayerApi(p.id, {
-            fullName: p.fullName,
-            dateOfBirth: p.dateOfBirth,
-            nationality: p.nationality,
-            position: p.position,
-            preferredFoot: p.preferredFoot,
-            heightCm: p.heightCm,
-            weightKg: p.weightKg,
-            currentClub: p.currentClub,
-            contractStart: p.contractStart,
-            contractEnd: p.contractEnd,
-            agentName: p.agentName,
-            agent_scout_id: p.agent_scout_id,
-            contact_info: p.contact_info,
-            profileImage: p.profileImage,
-            sportId: p.sportId,
-            contractStartWithCoach: p.contractStartWithCoach,
-            contractEndWithCoach: p.contractEndWithCoach,
-          });
+          const updated = mapApiPlayerToPlayer(await updatePlayerApi(p.id, {
+              fullName: p.fullName,
+              dateOfBirth: p.dateOfBirth,
+              nationality: p.nationality,
+              position: p.position,
+              preferredFoot: p.preferredFoot,
+              heightCm: p.heightCm,
+              weightKg: p.weightKg,
+              currentClub: p.currentClub,
+              contractStart: p.contractStart,
+              contractEnd: p.contractEnd,
+              agentName: p.agentName,
+              agent_scout_id: p.agent_scout_id,
+              contact_info: p.contact_info,
+              player_email: (p as any).player_email ?? (p as any).playerEmail ?? undefined,
+              profileImage: p.profileImage,
+              sportId: p.sportId,
+              contractStartWithCoach: p.contractStartWithCoach,
+              contractEndWithCoach: p.contractEndWithCoach,
+              // extended profile fields
+              gender: (p as any).gender ?? undefined,
+              place_of_birth: (p as any).place_of_birth ?? (p as any).placeOfBirth ?? undefined,
+              primary_language: (p as any).primary_language ?? (p as any).primaryLanguage ?? undefined,
+              secondary_language: (p as any).secondary_language ?? (p as any).secondaryLanguage ?? undefined,
+              profile_visibility: (p as any).profile_visibility ?? (p as any).profileVisibility ?? undefined,
+              phone_number: (p as any).phone_number ?? (p as any).phoneNumber ?? undefined,
+              alternate_phone: (p as any).alternate_phone ?? (p as any).alternatePhone ?? undefined,
+              emergency_contact_name: (p as any).emergency_contact_name ?? (p as any).emergencyContactName ?? undefined,
+              emergency_contact_number: (p as any).emergency_contact_number ?? (p as any).emergencyContactNumber ?? undefined,
+              address_line1: (p as any).address_line1 ?? (p as any).addressLine1 ?? undefined,
+              address_line2: (p as any).address_line2 ?? (p as any).addressLine2 ?? undefined,
+              city: (p as any).city ?? undefined,
+              state: (p as any).state ?? undefined,
+              country: (p as any).country ?? undefined,
+              postal_code: (p as any).postal_code ?? (p as any).postalCode ?? undefined,
+              secondary_position: (p as any).secondary_position ?? (p as any).secondaryPosition ?? undefined,
+              jersey_number: (p as any).jersey_number ?? (p as any).jerseyNumber ?? undefined,
+              experience_years: (p as any).experience_years ?? (p as any).experienceYears ?? undefined,
+              playing_level: (p as any).playing_level ?? (p as any).playingLevel ?? undefined,
+              dominant_side: (p as any).dominant_side ?? (p as any).dominantSide ?? undefined,
+              fitness_level: (p as any).fitness_level ?? (p as any).fitnessLevel ?? undefined,
+              injury_status: (p as any).injury_status ?? (p as any).injuryStatus ?? undefined,
+              coach_email: (p as any).coach_email ?? (p as any).coachEmail ?? undefined,
+              coach_phone: (p as any).coach_phone ?? (p as any).coachPhone ?? undefined
+            }));
 
           setPlayers(prev =>
             prev.map(x => x.id === updated.id ? updated : x)
@@ -558,14 +758,14 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
       },
 
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addReview: async (r) => {
         try {
           const createdReview = await createReviewApi({
             playerId: String(r.playerId),
-            scoutId: r.scoutId,
+            scoutId: r.scoutId ?? (user?.loginUser?.type === 'Scout' ? user?.loginUser?.id : r.scoutId),
             matchDate: r.matchDate || undefined,
             club1Id: r.club1Id,
             club2Id: r.club2Id,
@@ -631,14 +831,14 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             const createdTasks: Task[] = [];
 
             for (const [skill, detail] of Object.entries(r.revSkillDetails)) {
+              const comment = detail?.comment;
               if (!detail.followUpDate) continue; // skip skills with no date selected
 
               const taskPayload: any = {
-                title: `Review follow-up: ${skill} - ${player?.fullName || 'Unknown'}`,
-                description: `Follow up on ${skill} rating from review on ${r.matchDate}. Review ID: ${createdReview.reviewId}.`,
+                title: `Review follow-up: ${skill}`,
+                description: `Follow up on ${skill} rating from review on ${r.matchDate}. Review ID: ${createdReview.reviewId} :${comment ? `\n${comment}` : ''}`,
                 playerId: String(r.playerId),
-                // clubId: r.club1Id || undefined,   // ← club1Id from the review form
-                assignedToScoutId: r.scoutId,     // ← scout who created the review
+                assignedToScoutId: String(user?.loginUser?.id ?? user?.id ?? r.scoutId ?? ''),     // prefer loginUser id for Scout
                 dueDate: detail.followUpDate,     // ← date picked in that skill's date picker
                 status: 'open',
                 source: 'review',
@@ -663,45 +863,12 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             }
 
             if (createdTasks.length > 0) {
-              const recipient = player?.player_email?.trim() || scouts.find(s => s.scoutId === r.scoutId)?.email?.trim();
-
-              if (recipient) {
-                const emailSubject = `Review follow-up tasks created for ${player?.fullName || 'your player'}`;
-                const emailRows = createdTasks.map(task => `
-                  <tr>
-                    <td style="padding:10px; border:1px solid #e3e8ee;">${task.title}</td>
-                    <td style="padding:10px; border:1px solid #e3e8ee;">${task.dueDate}</td>
-                    <td style="padding:10px; border:1px solid #e3e8ee;">${task.description}</td>
-                    <td style="padding:10px; border:1px solid #e3e8ee;">
-                      <a href="${window.location.origin}/tasks?taskId=${task.taskId}" style="background:#1f4e79; color:#fff; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:12px; display:inline-block;">View Task</a>
-                    </td>
-                  </tr>
-                `).join('');
-
-                const emailBody = `
-                  <div style="font-family:Arial,sans-serif; color:#111; line-height:1.5;">
-                    <h2 style="margin:0 0 16px; color:#1f4e79;">Review Follow-Up Tasks Created</h2>
-                    <p style="margin:0 0 16px;">The following review follow-up tasks were created based on the latest ratings.</p>
-                    <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-                      <thead>
-                        <tr>
-                          <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Task</th>
-                          <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Due Date</th>
-                          <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Details</th>
-                          <th style="text-align:left; padding:10px; background:#f4f6fb; border:1px solid #e3e8ee;">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${emailRows}
-                      </tbody>
-                    </table>
-                    <p style="margin:0;">Please review these tasks in the application.</p>
-                  </div>
-                `;
-
-                await sendHtmlEmail(recipient, emailSubject, emailBody);
-              } else {
-                console.warn('Skipping review task notification email because no recipient email address was available');
+              try {
+                await sendReviewFollowupEmailApi(createdReview.reviewId);
+                showSuccess('Follow-up Email Sent', 'Consolidated follow-up email has been queued by the server.');
+              } catch (emailErr) {
+                console.error('Failed to trigger consolidated follow-up email', emailErr);
+                showError('Email Failed', 'Server failed to queue consolidated follow-up email.');
               }
             }
           }
@@ -713,8 +880,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addDocument: async (file: File, clubId?: string, playerId?: string, type?: string, isVisibleToPlayer?: boolean) => {
         try {
@@ -778,8 +945,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addClub: async (c, logoFile) => {
         try {
@@ -871,8 +1038,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addClubContact: async (c) => {
         try {
@@ -922,34 +1089,18 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
-      // ===========================================================
-      // ===========================================================
-
-      // addNote: async (n) => {
-      //   try {
-      //     const created = await createNoteApi({
-      //       playerId: n.playerId ? String(n.playerId) : undefined,
-      //       clubId: n.clubId ? String(n.clubId) : undefined,
-      //       createdByScoutId: n.createdByScoutId,
-      //       category: n.category,
-      //       topic: n.topic,
-      //       description: n.description,
-      //       followUpDate: n.followUpDate || undefined,
-      //     });
-      //     setNotes(prev => [...prev, created]);
-      //   } catch (err) {
-      //     console.error('createNote API failed', err);
-      //     setNotes(prev => [...prev, n]); // fallback
-      //   }
-      // },
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addNote: async (n) => {
         try {
           // ── Step 1: Create the note first ─────────────────────────────
+          const createdByScoutIdToSend = n.createdByScoutId ?? (user?.loginUser?.type === 'Scout' ? user?.loginUser?.id : undefined);
+
           const created = await createNoteApi({
             playerId: n.playerId ? String(n.playerId) : undefined,
             clubId: n.clubId ? String(n.clubId) : undefined,
-            createdByScoutId: n.createdByScoutId,
+            createdByScoutId: createdByScoutIdToSend,
             category: n.category,
             topic: n.topic,
             description: n.description,
@@ -959,7 +1110,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
 
           // ── Step 2: Only if note was saved successfully, add to state ──
           setNotes(prev => [...prev, created]);
-          showSuccess("Note Created", `Note ${created.noteId} created successfully`);
+          const createdTitle = (created.topic || n.topic || '').trim() || 'Note';
+          showSuccess("Note Created", `${createdTitle} has been created.`);
 
           // ── Step 3: Only if note success AND followUpDate is future ────
           if (created.noteId && created.followUpDate) {
@@ -977,10 +1129,11 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
               const entityName = player?.fullName || club?.clubName || 'Unknown';
 
               const taskPayload: any = {
-                title: `Follow up: ${created.topic}`,
+                title: `Note Follow up: ${created.topic}`,
                 playerId: n.playerId ? String(n.playerId) : undefined,
-                description: `Follow up on ${source} note for ${entityName}. Note ID: ${created.noteId}.`,
-                assignedToScoutId: created.createdByScoutId,
+                // description: `Follow up on ${source} note for ${entityName}. Note ID: ${created.noteId}.`,
+                description: `Follow up on ${source}, Note ID: ${created.noteId} : ${created.description ? `\n\nNote content: ${created.description}` : ''}`,
+                assignedToScoutId: String(user?.loginUser?.id ?? user?.id ?? created.createdByScoutId ?? ''),
                 dueDate: created.followUpDate,
                 status: 'open',
                 source: 'note',
@@ -1012,37 +1165,10 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
                 const recipient = player?.player_email?.trim() || scouts.find(s => s.scoutId === created.createdByScoutId)?.email?.trim();
                 if (recipient) {
                   const emailSubject = `Follow-up task created for note: ${created.topic}`;
-                  const emailBody = `
-                    <div style="font-family:Arial,sans-serif; color:#111; line-height:1.5;">
-                      <h2 style="margin:0 0 16px; color:#1f4e79;">Follow-Up Task Created</h2>
-                      <p style="margin:0 0 16px;">A follow-up task was created based on your note.</p>
-                      <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-                        <tr>
-                          <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee; width:140px;">Note Topic</td>
-                          <td style="padding:10px; border:1px solid #e3e8ee;">${created.topic}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Task Title</td>
-                          <td style="padding:10px; border:1px solid #e3e8ee;">${taskToNotify.title}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Due Date</td>
-                          <td style="padding:10px; border:1px solid #e3e8ee;">${taskToNotify.dueDate}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Related To</td>
-                          <td style="padding:10px; border:1px solid #e3e8ee;">${entityName}</td>
-                        </tr>
-                      </table>
-                      <p style="margin:0 0 16px;">${taskToNotify.description}</p>
-                      <p style="margin:0;">
-                        <a href="${window.location.origin}/tasks?taskId=${taskToNotify.taskId}" style="background:#1f4e79; color:#fff; padding:10px 20px; text-decoration:none; border-radius:4px; display:inline-block;">View Task Details</a>
-                      </p>
-                    </div>
-                  `;
-                  await sendHtmlEmail(recipient, emailSubject, emailBody);
+                  // Notification emails for tasks created from notes are sent by the backend.
+                  // Frontend should not send emails directly.
                 } else {
-                  console.warn('Skipping note task notification email because no recipient email address was available');
+                  console.warn('Skipping note task notification because no recipient email address was available');
                 }
               }
             }
@@ -1052,16 +1178,11 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           // ── Note creation failed — do NOT create any task ──────────────
           console.error('createNote API failed', err);
           showError('Error', 'Failed to create note');
-          setNotes(prev => [...prev, n]);
+          throw err;
         }
       },
 
       updateNote: async (n: Note) => {
-        // optimistic UI update so toggle updates immediately when user clicks
-        setNotes(prev =>
-          prev.map(x => x.noteId === n.noteId ? { ...x, ...n } : x)
-        );
-
         try {
           const updated = await updateNoteApi(n.noteId, {
             playerId: n.playerId,
@@ -1076,35 +1197,32 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           setNotes(prev =>
             prev.map(x => x.noteId === updated.noteId ? updated : x)
           );
-          showUpdate("Note Updated", `${updated.topic} updated successfully`);
+          const updatedTitle = (updated.topic || n.topic || '').trim() || 'Note';
+          showUpdate("Note Updated", `${updatedTitle} has been updated.`);
         } catch (err) {
           console.error("Update note failed", err);
           showError("Error", "Failed to update note");
-          // roll back on failure
-          setNotes(prev =>
-            prev.map(x => x.noteId === n.noteId ? { ...x, ...n } : x)
-          );
+          throw err;
         }
       },
 
-      deleteNote: async (id: string) => {
-        // ── Optimistic update: remove immediately from UI ──────────────
-        setNotes(prev => prev.filter(n => n.noteId !== id));
-
+      deleteNote: async (id: string, noteTitle?: string) => {
         try {
+          const existingNote = notes.find(n => n.noteId === id);
           await deleteNoteApi(id);
-          showSuccess("Note Deleted", "Note deleted successfully");
+          setNotes(prev => prev.filter(n => n.noteId !== id));
+          const deletedTitle = (noteTitle || existingNote?.topic || '').trim() || 'Note';
+          showSuccess("Note Deleted", `${deletedTitle} has been deleted.`);
         } catch (err) {
           console.error("Delete note failed", err);
           showError("Error", "Failed to delete note");
-          // ── Revert: restore the note if API fails ──────────────────────
-          setNotes(prev => prev);
+          throw err;
         }
       },
 
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addTask: async (t: Task) => {
         try {
@@ -1122,64 +1240,16 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
 
           setTasks(prev => [...prev, created]);
 
-          try {
-            const player = created.playerId
-              ? players.find(p => String(p.id) === String(created.playerId))
-              : undefined;
-            const scoutAssignee = scouts.find(s => s.scoutId === created.assignedToScoutId);
-            const recipient = player?.player_email?.trim() || scoutAssignee?.email?.trim();
-
-            if (recipient) {
-              const entityName = created.playerId
-                ? player?.fullName
-                : created.clubId
-                  ? clubs.find(c => c.clubId === created.clubId)?.clubName
-                  : 'Unknown';
-
-              const emailSubject = `New task assigned: ${created.title}`;
-              const emailBody = `
-                <div style="font-family:Arial,sans-serif; color:#111; line-height:1.5;">
-                  <h2 style="margin:0 0 16px; color:#1f4e79;">New Task Assigned</h2>
-                  <p style="margin:0 0 16px;">A new task has been assigned with the following details:</p>
-                  <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-                    <tr>
-                      <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee; width:120px;">Title</td>
-                      <td style="padding:10px; border:1px solid #e3e8ee;">${created.title}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Description</td>
-                      <td style="padding:10px; border:1px solid #e3e8ee;">${created.description || 'No description'}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Related To</td>
-                      <td style="padding:10px; border:1px solid #e3e8ee;">${entityName}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Due Date</td>
-                      <td style="padding:10px; border:1px solid #e3e8ee;">${created.dueDate}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px; font-weight:700; background:#f4f6fb; border:1px solid #e3e8ee;">Status</td>
-                      <td style="padding:10px; border:1px solid #e3e8ee;">${created.status}</td>
-                    </tr>
-                  </table>
-                  <p style="margin:0 0 16px;">
-                    <a href="${window.location.origin}/tasks?taskId=${created.taskId}" style="background:#1f4e79; color:#fff; padding:10px 20px; text-decoration:none; border-radius:4px; display:inline-block;">View Task Details</a>
-                  </p>
-                  <p style="margin:0;">Please review the task in the application.</p>
-                </div>
-              `;
-
-              await sendPowerAutomateEmail(recipient, emailSubject, emailBody);
-              showSuccess('Email Sent', 'Task notification email sent successfully.');
-            } else {
-              console.warn('Skipping task notification email because no recipient email address was available');
-            }
-          } catch (err) {
-            console.error('Power Automate task email failed', err);
-          }
+          // Email notifications for tasks are sent by the backend. No client-side
+          // direct email calls should be made. The server will notify the player
+          // and scout as configured when creating tasks.
 
           showSuccess("Task Created", `${created.title} created successfully`);
+          try {
+            queryClient.invalidateQueries({ queryKey: ['tasks-page'] });
+          } catch (e) {
+            // ignore if react-query is not available or fails
+          }
         } catch (err) {
           console.error("Create task API failed", err);
           showError("Error", "Failed to create task");
@@ -1206,9 +1276,11 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             prev.map(x => x.taskId === updated.taskId ? updated : x)
           );
           showUpdate("Task Updated", `${updated.title} updated successfully`);
+          return true;
         } catch (err) {
           console.error("Update task API failed", err);
           showError("Error", "Failed to update task");
+          return false;
         }
       },
 
@@ -1217,29 +1289,35 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           await deleteTaskApi(id);
           setTasks(prev => prev.filter(t => t.taskId !== id));
           showSuccess("Task Deleted", "Task deleted successfully");
+          return true;
         } catch (err) {
           console.error("Delete task API failed", err);
           showError("Error", "Failed to delete task");
+          return false;
         }
       },
 
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addEmail: async (e) => {
         try {
-          const emailRecord = {
-            ...e,
-            emailId: crypto.randomUUID(),
-          };
-
-          await sendPowerAutomateEmail(e.recipientEmail, e.subject, e.body);
-          setEmails(prev => [...prev, emailRecord]);
-          showSuccess('Email Sent', `Email to ${e.recipientEmail} sent successfully`);
+          // Create email record on the backend; server will send the email.
+          const created = await createEmailApi({
+            recipientEmail: e.recipientEmail,
+            subject: e.subject,
+            body: e.body,
+            sentByScoutId: e.sentByScoutId ?? null,
+            playerId: e.playerId ?? null,
+            clubId: e.clubId ?? null,
+          });
+          setEmails(prev => [...prev, created]);
+          showSuccess('Email Sent', `Email to ${e.recipientEmail} queued for delivery`);
         } catch (err) {
           console.error('Power Automate email failed', err);
           showError('Error', 'Failed to send email');
+          throw err;
         }
       },
 
@@ -1271,8 +1349,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
-      // ===========================================================
-      // ===========================================================
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
 
       addTemplate: async (t) => {
@@ -1328,6 +1406,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
+      // ==========================================================================================================================
+      // ==========================================================================================================================
+
       addScout: async (s) => {
         try {
           const created = await createScoutApi({
@@ -1344,6 +1425,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             postalCode: s.postalCode,
             country: s.country,
             lockedAreas: s.lockedAreas,
+            sportId: s.sportId,
             isShowPlayer: s.isShowPlayer,
           });
 
@@ -1372,6 +1454,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             state: s.state,
             postalCode: s.postalCode,
             country: s.country,
+            sportId: s.sportId,
             lockedAreas: s.lockedAreas,
             isShowPlayer: s.isShowPlayer,
           });
@@ -1389,6 +1472,7 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
             state: s.state,
             postalCode: s.postalCode,
             country: s.country,
+            sportId: s.sportId,
             lockedAreas: s.lockedAreas,
             isShowPlayer: s.isShowPlayer,
           });
@@ -1418,6 +1502,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           showError("Error", "Failed to delete scout");
         }
       },
+
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addContactRole: async (role: ContactRole) => {
         try {
@@ -1468,12 +1555,16 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
+      // ==========================================================================================================================
+      // ==========================================================================================================================
+
       addPlayerPosition: async (position: PlayerPosition) => {
         try {
           const created = await createPlayerPositionApi({
             positionCode: position.positionCode,
             positionName: position.positionName,
-            description: position.description
+            description: position.description,
+            sportId: position.sportId
           });
 
           setPlayerPositions(prev => [...prev, created]);
@@ -1490,7 +1581,8 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           const updated = await updatePlayerPositionApi(position.positionId, {
             positionCode: position.positionCode,
             positionName: position.positionName,
-            description: position.description
+            description: position.description,
+            sportId: position.sportId
           });
 
           setPlayerPositions(prev =>
@@ -1518,6 +1610,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           showError("Error", "Failed to delete player position");
         }
       },
+
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addSport: async (sport: Sport) => {
         try {
@@ -1565,6 +1660,9 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
           showError("Error", "Failed to delete sport");
         }
       },
+
+      // ==========================================================================================================================
+      // ==========================================================================================================================
 
       addSportActivity: async (activity: SportActivity) => {
         try {
@@ -1615,7 +1713,12 @@ export const PlayerProvider = ({ children }: { children: ReactNode }) => {
         }
       },
 
+      // ==========================================================================================================================
+      // ==========================================================================================================================
+
       generateAutoTasks,
+
+      getPlayersForPage: () => playersForPage,
     }}>
       {children}
     </AppContext.Provider>

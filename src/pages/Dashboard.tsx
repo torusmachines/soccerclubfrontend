@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAppContext } from '@/context/PlayerContext';
 import { getContractStatus, getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
 import { ContractBadge } from '@/components/ContractBadge';
 import { StarRating } from '@/components/StarRating';
@@ -9,37 +8,163 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Users, AlertTriangle, Star, ClipboardList, CheckSquare, StickyNote, Mail, Calendar, LogOut } from 'lucide-react';
+import { fetchContractAlerts, fetchDashboardApi, fetchTaskConfigration, updateTaskApi } from '@/services/apiService';
 import { Link, useNavigate } from 'react-router-dom';
-import { format, subWeeks, isAfter, isPast, addDays } from 'date-fns';
+import { format, subWeeks, isAfter, isPast, addDays, addMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { getContractExpiringMonths } from '@/lib/settingsUtils';
 import { useAuth } from '@/context/AuthContext';
 import { isScoutRole } from '@/lib/accessPolicy';
 import { TaskDetailsModal } from '@/components/TaskDetailsModal';
-import { Task } from '@/types';
+import { Contract, Task } from '@/types';
 
 
 const Dashboard = () => {
-  const { players, reviews, scouts, tasks, notes, emails, clubs, playerPositions, sportActivities } = useAppContext();
-  const { user, loadUser, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const [dashboardData, setDashboardData] = useState<any | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(true);
   const [agentFilter, setAgentFilter] = useState('all');
   const isPlayerUser = (user?.role || '').toLowerCase() === 'player';
   const isScoutUser = isScoutRole(user?.role);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [noteToOpen, setNoteToOpen] = useState<string | null>(null);
+  const [contractTab, setContractTab] = useState<'all' | Contract['contractType']>('all');
+  const [companyProfile, setCompanyProfile] = useState<any | null>(null);
+  const [dashboardContracts, setDashboardContracts] = useState<Contract[]>([]);
+  const [contractAlertsLoading, setContractAlertsLoading] = useState(false);
+  const [taskPlayersOptions, setTaskPlayersOptions] = useState<any[]>([]);
+  const [taskClubsOptions, setTaskClubsOptions] = useState<any[]>([]);
+  const [taskScoutsOptions, setTaskScoutsOptions] = useState<any[]>([]);
 
-  useEffect(() => {
-    void loadUser();
-  }, [loadUser]);
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+  const players = dashboardData?.players || [];
+  const reviews = dashboardData?.reviews || [];
+  const scouts = dashboardData?.scouts || [];
+  const tasks = dashboardData?.tasks || [];
+  const notes = dashboardData?.notes || [];
+  const emails = dashboardData?.emails || [];
+  const clubs = dashboardData?.clubs || [];
+  const playerPositions = dashboardData?.playerPositions || [];
+  const sportActivities = dashboardData?.sportActivities || [];
+  const contractTypeLabels: Record<Contract['contractType'], string> = {
+    PlayerClub: 'Player ↔ Club',
+    ClubCompany: 'Club ↔ Sponsor',
+    PlayerCompany: 'Player ↔ Sponsor',
+    PlayerCoach: 'Player ↔ Coach',
   };
 
-  const handleTaskClick = (task: Task) => {
-    setSelectedTask(task);
+  useEffect(() => {
+    (async () => {
+      setDashboardLoading(true);
+      try {
+        const data = await fetchDashboardApi();
+        setDashboardData(data || null);
+        setCompanyProfile(data?.companyProfile || null);
+      } catch (err) {
+        setDashboardData(null);
+        setCompanyProfile(null);
+      } finally {
+        setDashboardLoading(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      setContractAlertsLoading(true);
+      try {
+        const params: { contractType?: string; daysAhead: number } = {
+          daysAhead: 60,
+        };
+
+        if (contractTab !== 'all') {
+          params.contractType = contractTab;
+        }
+
+        const data = await fetchContractAlerts(params);
+        setDashboardContracts(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Failed to load contract alerts from dedicated API', err);
+        setDashboardContracts([]);
+      } finally {
+        setContractAlertsLoading(false);
+      }
+    })();
+  }, [contractTab]);
+
+  const ensureTaskConfigLoaded = async () => {
+    if (taskPlayersOptions.length > 0 || taskClubsOptions.length > 0 || taskScoutsOptions.length > 0) return;
+    try {
+      const cfg = await fetchTaskConfigration();
+      setTaskPlayersOptions((cfg?.allPlayerForTask || []).map((p: any) => ({ id: p.playerId, fullName: p.playerName, sportId: p.sportId, sportName: p.sportName })));
+      setTaskClubsOptions((cfg?.allClubsForTask || []).map((c: any) => ({ clubId: c.clubId, clubName: c.clubName })));
+      setTaskScoutsOptions((cfg?.allScoutForTask || []).map((s: any) => ({ scoutId: s.scoutId, scoutName: s.scoutName })));
+    } catch (err) {
+      setTaskPlayersOptions([]);
+      setTaskClubsOptions([]);
+      setTaskScoutsOptions([]);
+    }
+  };
+
+  const handleTaskClick = async (task: Task) => {
+    await ensureTaskConfigLoaded();
+    // normalize incoming task shape: copy possible assignedToId/assignedById/taskStatus into known fields
+    const normalized: Task = {
+      ...task,
+      // id fields
+      assignedById: (task as any).assignedById || (task as any).assigned_to_scout_id || (task as any).assignedToScoutId,
+      assignedToId: (task as any).assignedToId || (task as any).assignedToId || (task as any).playerId || (task as any).clubId,
+      // human-friendly names
+      assignedByName: (task as any).assigned_by || (task as any).assignedByName || undefined,
+      assignedToName: (task as any).assigned_to || (task as any).assignedToName || undefined,
+      // keep legacy fields for modal
+      assignedToScoutId: (task as any).assignedById || (task as any).assignedToScoutId,
+      playerId: (task as any).playerId || (task as any).assignedToId || task.playerId,
+      clubId: (task as any).clubId || ((task as any).assignedToId && !(players.some(p => String(p.id) === String((task as any).assignedToId))) ? (task as any).assignedToId : task.clubId),
+      status: (task as any).taskStatus || task.status,
+      taskStatus: (task as any).taskStatus || task.status,
+    } as Task;
+
+    setSelectedTask(normalized);
     setIsModalOpen(true);
+  };
+
+  const handleUpdateTask = async (updated: Task) => {
+    try {
+      const payload: any = {
+        dueDate: updated.dueDate,
+        status: (updated as any).taskStatus || updated.status,
+      };
+
+      if ((updated as any).assignedToScoutId) payload.assignedToScoutId = (updated as any).assignedToScoutId;
+      if (updated.playerId) payload.playerId = updated.playerId;
+      if (updated.clubId) payload.clubId = updated.clubId;
+
+      await updateTaskApi(updated.taskId, payload);
+
+      // update local cached dashboard data if present
+      if (dashboardData?.dashboardUpcomingTasks) {
+        const newList = (dashboardData.dashboardUpcomingTasks as any[]).map(t => t.taskId === updated.taskId ? ({ ...t, ...updated }) : t);
+        setDashboardData({ ...dashboardData, dashboardUpcomingTasks: newList });
+      }
+
+      if (dashboardData?.tasks) {
+        const newTasks = dashboardData.tasks.map((t: any) => t.taskId === updated.taskId ? ({ ...t, ...updated }) : t);
+        setDashboardData({ ...dashboardData, tasks: newTasks });
+      }
+
+      setSelectedTask(updated);
+    } catch (err) {
+      console.error('Failed to update task', err);
+    }
+  };
+
+  const handleStatClick = (key: string) => {
+    if (key === 'total') return navigate('/players');
+    if (key === 'expiring') return navigate('/players?filter=expiring');
+    if (key === 'openTasks') return navigate('/tasks');
+    if (key === 'needsReview') return navigate('/players?filter=needsReview');
   };
 
   const handleCloseModal = () => {
@@ -126,7 +251,25 @@ const Dashboard = () => {
       ? emailScopedEmails
       : emailScopedEmails.filter(e => String(e.sentByScoutId) === String(agentFilter));
 
-    const expiringPlayers = filteredPlayers.filter(p => getContractStatus(p) === 'Expiring Soon');
+    const expiringPlayers = filteredPlayers.filter(p => {
+      if (getContractStatus(p) === 'Expiring Soon') return true;
+
+      // also include coach contracts that are expiring soon
+      const monthsThreshold = getContractExpiringMonths();
+      const now = new Date();
+      const threshold = addMonths(now, monthsThreshold);
+
+      if (p.contractEndWithCoach) {
+        try {
+          const coachEnd = new Date(p.contractEndWithCoach);
+          if (coachEnd <= threshold) return true;
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+
+      return false;
+    });
     const availablePlayers = filteredPlayers.filter(p => getContractStatus(p) === 'Available');
     const recentReviews = filteredReviews.filter(r => isAfter(new Date(r.createdAt), fourWeeksAgo));
 
@@ -236,8 +379,14 @@ const Dashboard = () => {
       recentEmails,
       recentReviewedPlayers,
       upcomingReviewAlerts,
+      filteredPlayers,
     };
   }, [players, reviews, scouts, tasks, notes, emails, agentFilter, user?.email, user?.role, isScoutUser]);
+
+  // Use server-provided upcoming tasks when present, otherwise fall back to computed stats
+  const displayedUpcomingTasks = ((dashboardData?.dashboardUpcomingTasks as any[]) ?? stats.upcomingTasks) || [];
+
+  const displayedContractAlerts = dashboardContracts;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -266,10 +415,10 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {!isPlayerUser && <StatCard title="Total Players" value={stats.totalPlayers} icon={Users} />}
-        <StatCard title="Expiring Contracts" value={stats.expiringPlayers.length} icon={AlertTriangle} warning={stats.expiringPlayers.length > 0} />
-        <StatCard title="Open Tasks" value={stats.openTasks.length} icon={CheckSquare} warning={stats.overdueTasks.length > 0} />
-        <StatCard title="Needs Review" value={stats.playersWithoutRecentReview.length} icon={Star} warning={stats.playersWithoutRecentReview.length > 0} />
+        {!isPlayerUser && <StatCard title="Total Players" value={dashboardData?.dashboardCounters?.dashboardTotalPlayers ?? stats.totalPlayers} icon={Users} onClick={() => handleStatClick('total')} />}
+        <StatCard title="Expiring Contracts" value={dashboardData?.dashboardCounters?.dashboardTotalExpiringContracts ?? stats.expiringPlayers.length} icon={AlertTriangle} warning={(dashboardData?.dashboardCounters?.dashboardTotalExpiringContracts ?? stats.expiringPlayers.length) > 0} onClick={() => handleStatClick('expiring')} />
+        <StatCard title="Open Tasks" value={dashboardData?.dashboardCounters?.dashboardTotalOpenTasks ?? stats.openTasks.length} icon={CheckSquare} warning={(dashboardData?.dashboardCounters?.dashboardTotalOpenTasks ?? stats.openTasks.length) > 0} onClick={() => handleStatClick('openTasks')} />
+        <StatCard title="Needs Review" value={dashboardData?.dashboardCounters?.dashboardNeedsReview ?? stats.playersWithoutRecentReview.length} icon={Star} warning={(dashboardData?.dashboardCounters?.dashboardNeedsReview ?? stats.playersWithoutRecentReview.length) > 0} onClick={() => handleStatClick('needsReview')} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
@@ -277,12 +426,18 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Upcoming Tasks</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {stats.upcomingTasks.map(t => {
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : (
+              displayedUpcomingTasks.map(t => {
               const overdue = isPast(new Date(t.dueDate));
-              const assignedByScout = scouts.find(s => s.scoutId === t.assignedToScoutId); // Assigned by scout or admin placeholder
+              const assignedByScout = scouts.find(s => s.scoutId === t.assignedToScoutId);
               const taskPlayer = t.playerId ? players.find(p => String(p.id) === String(t.playerId)) : undefined;
               const taskClub = t.clubId ? clubs.find(c => String(c.clubId) === String(t.clubId)) : undefined;
-              const assignedToName = taskPlayer ? taskPlayer.fullName : taskClub ? taskClub.clubName : 'Unknown';
+              const assignedToName = (t.assigned_to as string) ?? (taskPlayer ? taskPlayer.fullName : taskClub ? taskClub.clubName : 'Unknown');
+              const assignedByName = (t.assigned_by as string) ?? assignedByScout?.scoutName ?? 'Auto-generated';
 
               return (
                 // <div key={t.taskId} className="p-3 rounded-lg hover:bg-secondary transition-colors cursor-pointer border" onClick={() => handleTaskClick(t)}>
@@ -376,7 +531,7 @@ const Dashboard = () => {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                       <span className="truncate max-w-full">
                         <span className="font-medium">Assigned By:</span>{" "}
-                        {assignedByScout?.scoutName || 'Auto-generated'}
+                        {assignedByName}
                       </span>
 
                       <span className="hidden md:inline">•</span>
@@ -399,8 +554,8 @@ const Dashboard = () => {
                 </div>
 
               );
-            })}
-            {stats.upcomingTasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No upcoming tasks</p>}
+            }))}
+            {!dashboardLoading && displayedUpcomingTasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No upcoming tasks</p>}
             <Link to="/tasks" className="text-xs text-primary hover:underline block text-center">View all tasks →</Link>
           </CardContent>
         </Card>
@@ -409,57 +564,98 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Contract Alerts</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {[...stats.expiringPlayers, ...stats.availablePlayers].slice(0, 5).map(p => {
-              const scout = scouts.find(s => s.scoutId === p.agent_scout_id);
-              const club = clubs.find(c => String(c.clubId) === String(p.currentClub));
-              const position = playerPositions.find(pos => pos.positionCode === p.position);
-              return (
-                <Link
-                  key={p.id}
-                  to={`/players/${p.id}`}
-                  className="block p-3 rounded-lg border hover:bg-secondary transition-colors"
+            {(contractAlertsLoading || dashboardLoading) ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+              <div className="flex gap-2 mb-2 flex-wrap">
+              <button
+                onClick={() => setContractTab('all')}
+                className={cn(
+                  'px-2 py-1 rounded-full text-[12px] font-medium border transition',
+                  contractTab === 'all'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted text-foreground border-transparent hover:bg-primary/10 hover:border-primary/30'
+                )}
+              >
+                All
+              </button>
+              {(Object.keys(contractTypeLabels) as Contract['contractType'][]).map((typeKey) => (
+                <button
+                  key={typeKey}
+                  onClick={() => setContractTab(typeKey)}
+                  className={cn(
+                    'px-2 py-1 rounded-full text-[12px] font-medium border transition',
+                    contractTab === typeKey
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted text-foreground border-transparent hover:bg-primary/10 hover:border-primary/30'
+                  )}
                 >
-                  {/* Row 1: Name + Status */}
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium truncate">{p.fullName}</p>
-                    <div className="shrink-0">
-                      <ContractBadge status={getContractStatus(p)} />
-                    </div>
-                  </div>
+                  {contractTypeLabels[typeKey]}
+                </button>
+              ))}
+              </div>
+              <hr />
 
-                  {/* Row 2: Fully responsive details */}
-                  <div className="mt-1 text-xs text-muted-foreground flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+              {displayedContractAlerts.map((contract) => {
+                  const endDate = contract.endDate ? new Date(contract.endDate) : null;
+                  const now = new Date();
+                  const monthsThreshold = getContractExpiringMonths();
+                  const threshold = addMonths(now, monthsThreshold);
+                  let status: import('@/types').ContractStatus = 'Available';
+                  if (endDate) {
+                    if (endDate <= now) status = 'Available';
+                    else if (endDate <= threshold) status = 'Expiring Soon';
+                    else status = 'Active';
+                  }
+                  const party1Name = contract.party1Name || contract.party1Type;
+                  const party2Name = contract.party2Name || contract.party2Type;
 
-                    {/* Left side (wraps nicely on small screens) */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="truncate">
-                        <span className="font-medium">Club:</span> {club?.clubName || p.currentClub || 'Unknown'}
-                      </span>
+                  return (
+                    <Link
+                      key={contract.id}
+                      to="/contracts"
+                      className="block p-3 rounded-lg border hover:bg-secondary transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium truncate">
+                          {party1Name} ↔ {party2Name}
+                          <Badge variant="secondary" className="ml-2 pb-[0px] pt-[1px] text-[11px]">
+                            {contractTypeLabels[contract.contractType]}
+                          </Badge>
+                        </p>
+                        <div className="shrink-0">
+                          <ContractBadge status={status} />
+                        </div>
+                      </div>
 
-                      <span className="hidden sm:inline">•</span>
+                      <div className="mt-1 text-xs text-muted-foreground flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="truncate">
+                            <span className="font-medium">Party 1:</span> {party1Name}
+                          </span>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="truncate">
+                            <span className="font-medium">Party 2:</span> {party2Name}
+                          </span>
+                        </div>
 
-                      <span className="truncate">
-                        <span className="font-medium">Coach:</span> {scout?.scoutName || 'Auto-generated'}
-                      </span>
-
-                      <span className="hidden sm:inline">•</span>
-
-                      <span>
-                        <span className="font-medium">Position:</span> {position?.positionName || p.position}
-                      </span>
-                    </div>
-
-                    {/* Right side (date aligned properly) */}
-                    <div className="shrink-0">
-                      <span className="font-medium">Ends:</span>{" "}
-                      {format(new Date(p.contractEnd), 'MMM d, yyyy')}
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-            {stats.expiringPlayers.length === 0 && stats.availablePlayers.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">No contract alerts</p>
+                        <div className="shrink-0 space-y-1 text-right">
+                          <div>
+                            <span className="font-medium">Ends:</span>{' '}
+                            {endDate ? format(endDate, 'MMM d, yyyy') : '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+                {displayedContractAlerts.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No contract alerts available</p>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -468,25 +664,59 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recent Notes</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {stats.recentNotes.map(n => {
-              const entityName = n.playerId
-                ? players.find(p => String(p.id) === n.playerId)?.fullName || 'Auto-generated Note'
-                : clubs.find(c => c.clubId === n.clubId)?.clubName || 'Auto-generated Note';
-              const entityUrl = n.playerId
-                ? `/players/${n.playerId}?tab=notes`
-                : `/clubs/${n.clubId}?tab=notes`;
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : (
+              (() => {
+              const apiNotes = (dashboardData?.dashboardRecentNotes ?? dashboardData?.recentNotes) as any[] | undefined;
+              const source = apiNotes && apiNotes.length > 0
+                ? apiNotes.map(a => {
+                    const rawForId = a.noteForId ?? a.note_for_id ?? a.note_forid ?? a.note_for ?? a.note_id_for;
+                    const rawPlayerOrClub = (a.playerOrClubNote ?? a.player_or_club_note ?? '') as string;
+                    const isPlayerNote = String(rawPlayerOrClub || '').toLowerCase() === 'player';
+                    return ({
+                      noteId: a.note_id ?? a.noteId,
+                      topic: a.notesTopic ?? a.noteTopic ?? a.topic,
+                      createdAt: a.noteCreatedAt ?? a.createdAt ?? a.note_created_at,
+                      playerId: isPlayerNote ? String(rawForId) : undefined,
+                      clubId: !isPlayerNote ? String(rawForId) : undefined,
+                      entityName: a.noteForName ?? a.note_for_name ?? a.noteFor ?? a.note_for_name,
+                      category: a.noteCategory ?? a.note_category ?? a.noteCategoryName
+                    });
+                  })
+                : stats.recentNotes;
 
-              return (
-                <Link key={n.noteId} to={entityUrl} className="block p-2 rounded-lg hover:bg-secondary transition-colors">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{n.topic}</p>
-                    <Badge variant="secondary" className="text-[11px]">{n.category}</Badge>
+              return source.map((n: any) => {
+                const entityName = n.entityName || (n.playerId
+                  ? players.find(p => String(p.id) === n.playerId)?.fullName || 'Auto-generated Note'
+                  : clubs.find(c => c.clubId === n.clubId)?.clubName || 'Auto-generated Note');
+
+                const handleClick = () => {
+                  if (n.playerId) {
+                    const playerNoteTabs = ['private', 'medical', 'technical', 'performance'];
+                    const rawCat = String(n.category || '').toLowerCase();
+                    const tab = rawCat === 'commercial' ? 'contracts' : (playerNoteTabs.includes(rawCat) ? rawCat : 'overview');
+                    navigate(`/players/${n.playerId}?tab=${tab}&noteId=${encodeURIComponent(n.noteId)}`);
+                  } else if (n.clubId) {
+                    navigate(`/clubs/${n.clubId}?tab=notes&noteId=${encodeURIComponent(n.noteId)}`);
+                  }
+                };
+
+                return (
+                  <div key={n.noteId} onClick={handleClick} className="block p-2 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{n.topic}</p>
+                      <Badge variant="secondary" className="text-[11px]">{n.category}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{entityName} · {format(new Date(n.createdAt), 'MMM d')}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{entityName} · {format(new Date(n.createdAt), 'MMM d')}</p>
-                </Link>
-              );
-            })}
-            {stats.recentNotes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No recent notes</p>}
+                );
+              });
+              })()
+            )}
+            {!dashboardLoading && ((dashboardData?.dashboardRecentNotes ?? dashboardData?.recentNotes) || stats.recentNotes).length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No recent notes</p>}
           </CardContent>
         </Card>
 
@@ -494,13 +724,62 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recent Emails</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {stats.recentEmails.map(e => (
-              <div key={e.emailId} className="p-2 rounded-lg hover:bg-secondary transition-colors">
-                <p className="text-sm font-medium truncate">{e.subject}</p>
-                <p className="text-xs text-muted-foreground">To: {e.recipientEmail} · {format(new Date(e.sentAt), 'MMM d')}</p>
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
               </div>
-            ))}
-            {stats.recentEmails.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No recent emails</p>}
+            ) : (
+              (() => {
+              const apiEmails = (dashboardData?.dashboardRecentEmail ?? dashboardData?.recentEmails) as any[] | undefined;
+              const source = apiEmails && apiEmails.length > 0
+                ? apiEmails.map(a => ({
+                    emailId: a.email_id ?? a.emailId,
+                    subject: a.subject ?? a.sendEmailForName ?? 'Email',
+                    recipientEmail: a.sentTo ?? a.recipientEmail,
+                    sentAt: a.sentAt ?? a.sent_at ?? a.sentAt,
+                    // prefer explicit API fields when available
+                    mailFor: (a.mailForClubOrPlayer ?? a.mail_for_club_or_player ?? a.mailFor ?? a.mail_for) as string | undefined,
+                    entityId: a.sendEmailForId ?? a.send_email_for_id ?? a.sendEmailForID ?? undefined,
+                    entityName: a.sendEmailForName ?? a.sendEmailForName ?? undefined
+                  }))
+                : (stats.recentEmails || []).map((ee: any) => ({ ...ee, entityId: ee.playerId ?? ee.clubId }));
+
+              return source.map((e: any) => {
+                const explicitType = String((e.mailFor || '')).toLowerCase();
+                const explicitId = e.entityId;
+
+                // Prefer explicit mailFor/sendEmailForId values when provided by API
+                let toPath: string | undefined;
+                if (explicitType === 'player' && explicitId) {
+                  toPath = `/players/${explicitId}?tab=emails&emailId=${encodeURIComponent(e.emailId)}`;
+                } else if (explicitType === 'club' && explicitId) {
+                  toPath = `/clubs/${explicitId}?tab=communication&emailId=${encodeURIComponent(e.emailId)}`;
+                } else {
+                  // Fallback: try to match against loaded players/clubs lists
+                  const relatedPlayer = e.entityId ? players.find(p => String(p.id) === String(e.entityId)) : undefined;
+                  const relatedClub = e.entityId ? clubs.find(c => String(c.clubId) === String(e.entityId)) : undefined;
+                  toPath = relatedPlayer
+                    ? `/players/${relatedPlayer.id}?tab=emails&emailId=${encodeURIComponent(e.emailId)}`
+                    : relatedClub
+                      ? `/clubs/${relatedClub.clubId}?tab=communication&emailId=${encodeURIComponent(e.emailId)}`
+                      : undefined;
+                }
+
+                return toPath ? (
+                  <Link key={e.emailId} to={toPath} className="p-2 rounded-lg hover:bg-secondary transition-colors cursor-pointer block">
+                    <p className="text-sm font-medium truncate">{e.subject}</p>
+                    <p className="text-xs text-muted-foreground">To: {e.recipientEmail} · {format(new Date(e.sentAt), 'MMM d')}</p>
+                  </Link>
+                ) : (
+                  <div key={e.emailId} className="p-2 rounded-lg hover:bg-secondary transition-colors">
+                    <p className="text-sm font-medium truncate">{e.subject}</p>
+                    <p className="text-xs text-muted-foreground">To: {e.recipientEmail} · {format(new Date(e.sentAt), 'MMM d')}</p>
+                  </div>
+                );
+              });
+              })()
+            )}
+            {!dashboardLoading && (((dashboardData?.dashboardRecentEmail ?? dashboardData?.recentEmails) || stats.recentEmails) as any[]).length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No recent emails</p>}
           </CardContent>
         </Card>
 
@@ -509,7 +788,24 @@ const Dashboard = () => {
           <Card>
             <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Recently Reviewed Players</CardTitle></CardHeader>
             <CardContent className="space-y-2 max-h-[30vh] overflow-y-auto scrollbar-thin">
-              {stats.recentReviewedPlayers.length > 0 ? stats.recentReviewedPlayers.map(item => (
+              {dashboardLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : (
+                // Prefer server-provided recently reviewed players when available
+                (() => {
+                  const apiList = (dashboardData?.dashboardRecentlyReviewedPlayers ?? dashboardData?.recentlyReviewedPlayers) as any[] | undefined;
+                  const source = apiList && apiList.length > 0
+                    ? apiList.map(r => ({
+                        player: { id: r.playerId, fullName: r.playerName, position: r.playerPosition },
+                        scout: { scoutName: r.reviewedByName, scoutId: r.reviewedById },
+                        overallRating: r.overallRating ? Number(r.overallRating).toFixed(1) : null,
+                        reviewDate: r.createdAt ?? r.matchDate
+                      }))
+                    : stats.recentReviewedPlayers;
+
+                  return source.length > 0 ? source.map(item => (
                 <Link key={item.player.id} to={`/players/${item.player.id}`} className="block p-2 rounded-lg hover:bg-secondary transition-colors border">
                   {/* Row 1: Name + Rating */}
                   <div className="flex items-center justify-between gap-2">
@@ -536,7 +832,9 @@ const Dashboard = () => {
                     </span>
                   </div>
                 </Link>
-              )) : <p className="text-sm text-muted-foreground">No players reviewed in last 4 weeks</p>}
+                  )) : <p className="text-sm text-muted-foreground">No players reviewed in last 4 weeks</p>;
+                })()
+            )}
             </CardContent>
           </Card>
         )}
@@ -545,28 +843,53 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Upcoming Review Alerts</CardTitle></CardHeader>
           <CardContent className="space-y-2 max-h-[30vh] overflow-y-auto scrollbar-thin">
-            {stats.upcomingReviewAlerts.length > 0 ? stats.upcomingReviewAlerts.map(r => {
-              const player = players.find(p => String(p.id) === String(r.playerId));
-              const scout = scouts.find(s => String(s.scoutId) === String(r.scoutId));
-              const position = playerPositions.find(p => p.positionCode === player?.position);
-              const club = clubs.find(c => String(c.clubId) === String(player?.currentClub));
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : (
+              (() => {
+                const apiAlerts = (dashboardData?.dashboardUpcomingReviewAlerts ?? dashboardData?.upcomingReviewAlerts) as any[] | undefined;
 
-              return (
-                <Link key={r.reviewId} to={`/players/${r.playerId}`} className="block">
-                  <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">{player ? player.fullName : r.playerId}</p>
-                      <p className="text-xs text-muted-foreground">{r.matchDate ? format(new Date(r.matchDate), 'MMM d, yyyy') : 'Date TBD'}</p>
+                const source = apiAlerts && apiAlerts.length > 0
+                  ? apiAlerts.map(a => ({
+                      playerId: a.reviewToId ?? a.playerId,
+                      playerName: a.reviewToName ?? a.fullName,
+                      matchDate: a.matchDate,
+                      scoutName: a.scoutName,
+                      positionName: a.playerPosition ?? a.positionName,
+                      clubName: a.clubName,
+                      reviewId: a.taskId ?? a.reviewId
+                    }))
+                  : stats.upcomingReviewAlerts.map((r: any) => ({
+                      playerId: r.playerId,
+                      playerName: players.find(p => String(p.id) === String(r.playerId))?.fullName,
+                      matchDate: r.matchDate,
+                      scoutName: scouts.find(s => String(s.scoutId) === String(r.scoutId))?.scoutName,
+                      positionName: playerPositions.find(p => p.positionCode === players.find(pl => String(pl.id) === String(r.playerId))?.position)?.positionName,
+                      clubName: clubs.find(c => String(c.clubId) === String(players.find(pl => String(pl.id) === String(r.playerId))?.currentClub))?.clubName,
+                      reviewId: r.reviewId
+                    }));
+
+                if (!source || source.length === 0) return <p className="text-sm text-muted-foreground">No upcoming reviews in next 4 weeks</p>;
+
+                return source.map(r => (
+                  <Link key={r.reviewId} to={`/players/${r.playerId}`} className="block">
+                    <div className="p-3 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors cursor-pointer">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">{r.playerName || r.playerId}</p>
+                        <p className="text-xs text-muted-foreground">{r.matchDate ? format(new Date(r.matchDate), 'MMM d, yyyy') : 'Date TBD'}</p>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        {r.scoutName && <span><span className="font-medium">Coach : </span> {r.scoutName}</span>}
+                        {r.positionName && <span><span className="font-medium"> • Position :</span> {r.positionName}</span>}
+                        {r.clubName && <span><span className="font-medium"> • Club : </span> {r.clubName}</span>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                      {scout && <span><span className="font-medium">Coach : </span> {scout.scoutName}</span>}
-                      {position && <span><span className="font-medium"> • Position :</span> {position.positionName}</span>}
-                      {club && <span><span className="font-medium"> • Club : </span> {club.clubName}</span>}
-                    </div>
-                  </div>
-                </Link>
-              );
-            }) : <p className="text-sm text-muted-foreground">No upcoming reviews in next 4 weeks</p>}
+                  </Link>
+                ));
+              })()
+            )}
           </CardContent>
         </Card>
 
@@ -574,15 +897,21 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Rating Distribution</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stats.ratingBuckets}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="range" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} allowDecimals={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--card-foreground))' }} />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={stats.ratingBuckets}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="range" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                  <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--card-foreground))' }} />
+                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -591,15 +920,21 @@ const Dashboard = () => {
           <Card>
             <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">Coach Activity (4 weeks)</CardTitle></CardHeader>
             <CardContent className="space-y-3 space-y-3 max-h-[35vh] overflow-y-auto scrollbar-thin">
-              {stats.scoutActivity.map(s => (
-                <div key={s.scoutId} className="flex items-center justify-between p-2">
-                  <div>
-                    <span className="text-sm font-medium">{s.scoutName}</span>
-                    <p className="text-xs text-muted-foreground">{s.roleName}</p>
-                  </div>
-                  <span className="text-sm font-bold text-primary">{s.reviewCount}</span>
+              {dashboardLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
                 </div>
-              ))}
+              ) : (
+                stats.scoutActivity.map(s => (
+                  <div key={s.scoutId} className="flex items-center justify-between p-2">
+                    <div>
+                      <span className="text-sm font-medium">{s.scoutName}</span>
+                      <p className="text-xs text-muted-foreground">{s.roleName}</p>
+                    </div>
+                    <span className="text-sm font-bold text-primary">{s.reviewCount}</span>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         )}
@@ -610,20 +945,21 @@ const Dashboard = () => {
         task={selectedTask}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Auto-generated') : 'Auto-generated'}
+        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === (selectedTask.assignedToScoutId || (selectedTask as any).assignedById))?.scoutName || 'Auto-generated') : 'Auto-generated'}
+        onUpdateTask={handleUpdateTask}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
-        scouts={scouts}
-        players={players}
-        clubs={clubs}
+        scouts={taskScoutsOptions.length ? taskScoutsOptions : scouts}
+        players={taskPlayersOptions.length ? taskPlayersOptions : players}
+        clubs={taskClubsOptions.length ? taskClubsOptions : clubs}
         isScout={isScoutUser}
       />
     </div>
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, warning = false }: { title: string; value: number; icon: any; warning?: boolean }) => (
-  <Card className={cn(warning ? 'border-accent/30' : '')}>
+const StatCard = ({ title, value, icon: Icon, warning = false, onClick }: { title: string; value: number; icon: any; warning?: boolean; onClick?: () => void }) => (
+  <Card className={cn(warning ? 'border-accent/30' : '') + (onClick ? ' cursor-pointer' : '')} onClick={onClick}>
     <CardContent className="p-4 flex items-center gap-4">
       <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", warning ? 'bg-accent/15' : 'bg-primary/15')}>
         <Icon size={18} className={warning ? 'text-accent' : 'text-primary'} />

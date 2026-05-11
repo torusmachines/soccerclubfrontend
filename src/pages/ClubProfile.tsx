@@ -3,7 +3,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '@/context/PlayerContext';
 import { useAuth } from '@/context/AuthContext';
 import { hasPermission } from '@/lib/accessPolicy';
-import { ClubContact, Club, DOCUMENT_TYPES, ContactRole } from '@/types';
+import { ClubContact, Club, Contract, DOCUMENT_TYPES, ContactRole } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getAverageRatings, calculateOverallAverage } from '@/lib/playerUtils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { NotesModule } from '@/components/NotesModule';
+import { NoteViewDialog, TaskTimeline } from '@/components';
 import { EmailModule } from '@/components/EmailModule';
 import { ArrowLeft, Plus, MapPin, Building2, User, Phone, Mail, FileText } from 'lucide-react';
 import { format } from 'date-fns';
@@ -21,59 +22,262 @@ import { Download } from "lucide-react";
 
 import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchContractsByClub } from '@/services/apiService';
-import type { CommercialContract } from '@/types';
+import { fetchProfileContractsByClub, fetchClubById, downloadDocumentApi, fetchTaskConfigration } from '@/services/apiService';
 
 
 
 const ClubProfile = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { clubs, clubContacts, addClubContact, deleteClubContact, documents, addDocument, players, notes, reviews, contactRoles } = useAppContext();
+  const { clubs, clubContacts, addClubContact, deleteClubContact, documents, addDocument, players, notes, reviews, contactRoles, tasks, loadEmailsByClub } = useAppContext();
   const { loadDocuments } = useAppContext();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [loadingClub, setLoadingClub] = useState<boolean>(true);
+
+  const triggerRemount = () => setRefreshKey(k => k + 1);
+
+  const handleAddContact = async (c: ClubContact) => {
+    try {
+      await addClubContact(c as any);
+      triggerRemount();
+    } catch (err) {
+      // addClubContact handles notifications/errors
+    }
+  };
+
+  const handleUploadDocument = async (file: File, clubId?: string, playerId?: string, type?: string) => {
+    await addDocument(file, clubId, playerId, type);
+    triggerRemount();
+  };
+
+  const handleDownloadDocument = async (docId: string, docName?: string) => {
+    try {
+      setDownloadingDocId(docId);
+      const result = await downloadDocumentApi(docId);
+      if (!result?.fileData) return;
+      const link = document.createElement('a');
+      link.href = `data:application/octet-stream;base64,${result.fileData}`;
+      link.download = result.documentName || docName || 'document';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
   const canManageClubs = hasPermission(user?.role, 'clubs:manage');
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [commercialContracts, setCommercialContracts] = useState<CommercialContract[]>([]);
+  const [profileContracts, setProfileContracts] = useState<Contract[]>([]);
+  const [taskConfig, setTaskConfig] = useState<{
+    allClubsForTask: { clubId: string; clubName: string }[];
+    allScoutForTask: { scoutId: string; scoutName: string }[];
+    allPlayerForTask: { playerId: string; playerName: string; sportId?: number; sportName?: string }[];
+  } | null>(null);
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const noteIdParam = searchParams.get('noteId');
+  const [openNoteModal, setOpenNoteModal] = useState(false);
 
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    // Load the club details and players at this club. Compose response as:
+    // { ClubDetails: { ... }, PlayersAtClub: [ { playerId, playerName, position, contractStart, contractEnd, nationality } ] }
+    const loadClub = async () => {
+      if (!id) {
+        setClubDetail(null);
+        setLoadingClub(false);
+        return;
+      }
 
-  useEffect(() => {
-    const loadCommercialContracts = async () => {
-      if (id) {
-        try {
-          const contracts = await fetchContractsByClub(id);
-          setCommercialContracts(contracts);
-        } catch (error) {
-          console.error('Failed to load commercial contracts', error);
+      setLoadingClub(true);
+      try {
+        const fetched = await fetchClubById(id);
+
+        if (!fetched) {
+          setClubDetail(null);
+          return;
         }
+
+        // Accept responses in either camelCase (playersAtClub, clubDetails)
+        // or PascalCase (PlayersAtClub, ClubDetails). If the backend already
+        // returns the composed shape, use it directly; otherwise wrap the
+        // single club DTO for backward compatibility.
+        const anyF = fetched as any;
+        const hasComposed = anyF.playersAtClub || anyF.PlayersAtClub || anyF.clubDetails || anyF.ClubDetails;
+
+        if (hasComposed) {
+          setClubDetail(anyF);
+        } else {
+          setClubDetail({ ClubDetails: anyF, PlayersAtClub: [] } as any);
+        }
+      } catch (err) {
+        console.error('Failed to load club details', err);
+        setClubDetail(null);
+      } finally {
+        setLoadingClub(false);
       }
     };
-    loadCommercialContracts();
-  }, [id]);
+
+    loadClub();
+  }, [id, refreshKey]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam && ['overview', 'contacts', 'notes', 'documents', 'communication'].includes(tabParam)) {
+    if (tabParam === 'commercial') {
+      setActiveTab('contracts');
+      return;
+    }
+    if (tabParam && ['overview', 'contracts', 'contacts', 'notes', 'tasks', 'documents', 'communication'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
 
-  const club = clubs.find(c => c.clubId === id);
-  if (!club) return (
-    <div className="text-center py-20">
-      <p className="text-muted-foreground mb-4">Club not found</p>
-      <Link to="/clubs" className="text-primary underline">Back to clubs</Link>
-    </div>
-  );
+  useEffect(() => {
+    if (!id) {
+      setProfileContracts([]);
+      return;
+    }
 
-  const contacts = clubContacts.filter(cc => cc.clubId === id);
-  const clubDocs = documents.filter(d => d.clubId === id);
-  const clubPlayers = players.filter(p => p.currentClub === club.clubId);
+    let cancelled = false;
+    const loadContracts = async () => {
+      try {
+        const rows = await fetchProfileContractsByClub(String(id));
+        if (cancelled) return;
+        setProfileContracts(Array.isArray(rows) ? rows : []);
+      } catch (err) {
+        console.error('Failed to load club contracts', err);
+        if (!cancelled) setProfileContracts([]);
+      }
+    };
 
+    loadContracts();
+
+    return () => { cancelled = true; };
+  }, [id]);
+
+  useEffect(() => {
+    if (noteIdParam) {
+      setActiveTab('notes');
+      setOpenNoteModal(true);
+    } else setOpenNoteModal(false);
+  }, [noteIdParam]);
+
+  useEffect(() => {
+    if (activeTab === 'communication') {
+      // club may not be initialized yet here; ensure load call happens after `club` is declared
+    }
+  }, [activeTab]);
+
+  const [clubDetail, setClubDetail] = useState<any | null>(null);
+  const [contacts, setContacts] = useState<ClubContact[]>([]);
   const [selectedType, setSelectedType] = useState<string>('ALL');
+
+  useEffect(() => {
+    if (!clubDetail) {
+      setContacts([]);
+      return;
+    }
+
+    const anyF = clubDetail as any;
+
+    const source = anyF.allContactsForClubs ?? anyF.AllContactsForClubs ??
+      anyF.clubDetails?.allContactsForClubs ?? anyF.clubDetails?.AllContactsForClubs ??
+      anyF.clubDetails?.clubContacts ?? anyF.ClubDetails?.clubContacts ?? anyF.clubContacts ?? anyF.ClubContacts ?? [];
+
+    const normalized: ClubContact[] = (source || []).map((c: any) => ({
+      clubContactId: c.clubContactId ?? c.ClubContactId ?? c.id ?? c.Id ?? '',
+      clubId: c.clubId ?? c.ClubId ?? c.clubID ?? c.ClubID ?? c.club ?? '',
+      contactName: c.contactName ?? c.ContactName ?? c.name ?? c.Name ?? '',
+      roleName: c.roleName ?? c.RoleName ?? c.role ?? c.Role ?? '',
+      email: c.email ?? c.Email ?? undefined,
+      phone: c.phone ?? c.Phone ?? undefined,
+      createdAt: c.createdAt ?? c.CreatedAt ?? c.createdAtDate ?? c.CreatedAtDate ?? ''
+    }));
+
+    setContacts(normalized);
+  }, [clubDetail]);
+
+  const club = clubs.find(c => c.clubId === id) ?? (clubDetail?.ClubDetails ?? clubDetail?.clubDetails ?? clubDetail);
+
+  useEffect(() => {
+    if (activeTab === 'communication' && club?.clubId) {
+      loadEmailsByClub(String(club.clubId));
+    }
+  }, [activeTab, club?.clubId, loadEmailsByClub]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    const loadConfig = async () => {
+      try {
+        const cfg = await fetchTaskConfigration();
+        if (cancelled) return;
+        setTaskConfig(cfg || null);
+      } catch (err) {
+        console.error('Failed to load task configuration', err);
+      }
+    };
+
+    loadConfig();
+
+    return () => { cancelled = true; };
+  }, [id]);
+
+  const clubDocs = documents.filter(d => d.clubId === id);
+  const playersAtSource = clubDetail?.PlayersAtClub ?? clubDetail?.playersAtClub;
+
+  const apiClubTasks = (
+    clubDetail?.club_all_tasks ??
+    clubDetail?.clubAllTasks ??
+    clubDetail?.ClubDetails?.club_all_tasks ??
+    clubDetail?.ClubDetails?.clubAllTasks ??
+    []
+  ) as any[];
+  const contextClubTasks = tasks?.filter((t: any) => String(t.clubId) === String(club?.clubId)) ?? [];
+  const mergedClubTasksMap = new Map<string, any>();
+  (apiClubTasks || []).forEach((t: any) => {
+    const id = String(t?.taskId ?? t?.TaskId ?? '');
+    if (id) mergedClubTasksMap.set(id, t);
+  });
+  (contextClubTasks || []).forEach((t: any) => {
+    const id = String(t?.taskId ?? t?.TaskId ?? '');
+    if (!id) return;
+    if (!mergedClubTasksMap.has(id)) mergedClubTasksMap.set(id, t);
+  });
+  const mergedClubTasks = Array.from(mergedClubTasksMap.values());
+  const tasksCount = mergedClubTasks.length;
+
+  // use club_all_documents from API when available, falling back to context `clubDocs`
+  const clubAllDocumentsSource = clubDetail?.club_all_documents ?? clubDetail?.club_allDocuments ?? clubDetail?.ClubDetails?.club_all_documents ?? clubDetail?.ClubDetails?.clubAllDocuments ?? clubDetail?.club_all_documents ?? clubDocs;
+  const clubAllDocuments = (clubAllDocumentsSource || []) as any[];
+
+  // Apply the selected type filter (case-insensitive). When `ALL` is selected, show everything.
+  const displayedClubDocuments = selectedType === 'ALL'
+    ? clubAllDocuments
+    : clubAllDocuments.filter(doc => {
+      const docType = ((doc?.documentType ?? doc?.DocumentType) || '').toString().trim().toLowerCase();
+      return docType === (selectedType || '').toLowerCase();
+    });
+
+  // Merge API-provided club notes with context notes (dedupe by noteId)
+  const apiClubNotesSource = (clubDetail?.club_all_notes ?? clubDetail?.clubAllNotes ?? clubDetail?.ClubDetails?.club_all_notes ?? clubDetail?.ClubDetails?.clubAllNotes) as any[] | undefined;
+  const contextClubNotes = notes.filter(n => String(n.clubId) === String(club?.clubId));
+  const mergedClubNotesMap = new Map<string, any>();
+  (apiClubNotesSource || []).forEach(n => { if (n?.noteId) mergedClubNotesMap.set(String(n.noteId), n); });
+  (contextClubNotes || []).forEach(n => { if (n?.noteId && !mergedClubNotesMap.has(String(n.noteId))) mergedClubNotesMap.set(String(n.noteId), n); });
+  const mergedClubNotes = Array.from(mergedClubNotesMap.values());
+
+  const clubPlayers = (playersAtSource
+    ? (playersAtSource as any[]).map(p => ({
+      id: p.playerId ?? p.PlayerId ?? p.id ?? '',
+      fullName: p.playerName ?? p.PlayerName ?? p.fullName ?? '',
+      position: p.position ?? p.positionCode ?? p.Position ?? p.PositionCode ?? '',
+      contractStart: p.contractStartDate ?? p.contractStart ?? p.ContractStartDate ?? p.ContractStart ?? undefined,
+      contractEnd: p.contractEndDate ?? p.contractEnd ?? p.ContractEndDate ?? p.ContractEnd ?? undefined,
+      nationality: p.nationality ?? p.Nationality ?? ''
+    }))
+    : players.filter(p => p.currentClub === (club?.clubId ?? club?.ClubId ?? ''))) as any[];
 
   const filteredDocs =
     selectedType === 'ALL'
@@ -91,6 +295,21 @@ const ClubProfile = () => {
         fileName: path.split('/').pop() || path,
       }));
   };
+
+  if (!club) {
+    if (loadingClub) return (
+      <div className="text-center py-20">
+        <p className="text-muted-foreground mb-4">Loading club...</p>
+      </div>
+    );
+
+    return (
+      <div className="text-center py-20">
+        <p className="text-muted-foreground mb-4">Club not found</p>
+        <Link to="/clubs" className="text-primary underline">Back to clubs</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in px-3 md:px-0">
@@ -125,11 +344,12 @@ const ClubProfile = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full flex flex-wrap gap-2 h-auto">
           <TabsTrigger value="overview" className="text-xs md:text-sm">Overview</TabsTrigger>
+          <TabsTrigger value="contracts" className="text-xs md:text-sm">Contracts ({profileContracts.length})</TabsTrigger>
           <TabsTrigger value="contacts" className="text-xs md:text-sm">Contacts ({contacts.length})</TabsTrigger>
-          <TabsTrigger value="notes" className="text-xs md:text-sm">Notes ({notes.filter(a => a.clubId === club.clubId).length})</TabsTrigger>
+          <TabsTrigger value="notes" className="text-xs md:text-sm">Notes ({mergedClubNotes?.length || 0})</TabsTrigger>
+          <TabsTrigger value="tasks" className="text-xs md:text-sm">Tasks ({tasksCount})</TabsTrigger>
           <TabsTrigger value="documents" className="text-xs md:text-sm">Documents</TabsTrigger>
           <TabsTrigger value="communication" className="text-xs md:text-sm">Communication</TabsTrigger>
-          <TabsTrigger value="commercial" className="text-xs md:text-sm">Commercial ({commercialContracts.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-3 md:mt-4 min-h-screen md:min-h-fit">
@@ -145,24 +365,23 @@ const ClubProfile = () => {
             <Card>
               <CardHeader><CardTitle className="text-sm">Players at Club</CardTitle></CardHeader>
               <CardContent className="space-y-2">
-                {clubPlayers.length === 0 ? (
-                  <p className="text-xs md:text-sm text-muted-foreground">No tracked players at this club</p>
-                ) : clubPlayers.map(p => (
-                  <Link key={p.id} to={`/players/${p.id}`} className="group block rounded-lg border border-border p-2 md:p-3 hover:border-primary hover:bg-primary/5 transition-colors">
-                    <div className="flex items-start justify-between gap-2 md:gap-3">
-                      <span className="text-xs md:text-sm font-medium text-foreground group-hover:text-primary truncate">{p.fullName}</span>
-                      <Badge variant="outline" className="text-xs shrink-0">{p.position}</Badge>
-                    </div>
-                    <div className="flex flex-col gap-1 mt-2 text-xs text-muted-foreground">
-                      <div className="break-words"><label className="font-medium text-foreground group-hover:text-primary">Contract: </label> {p.contractStart ? format(new Date(p.contractStart), 'MMM d, yyyy') : 'N/A'} – {p.contractEnd ? format(new Date(p.contractEnd), 'MMM d, yyyy') : 'N/A'}</div>
-                      <div><label className="font-medium text-foreground group-hover:text-primary">Overall rating:</label> {(() => {
-                        const playerReviews = reviews.filter(r => String(r.playerId) === String(p.id));
-                        return playerReviews.length ? `${calculateOverallAverage(getAverageRatings(playerReviews)).toFixed(1)}/5` : 'N/A';
-                      })()}
+                {playersAtSource && (playersAtSource as any[]).length > 0 ? (
+                  <div className="space-y-2">
+                    {(playersAtSource as any[]).map((p) => (
+                      <div key={p.playerId ?? p.PlayerId ?? p.id} className="rounded-lg border border-border p-2 md:p-3">
+                        <div className="flex items-center justify-between gap-2 md:gap-3">
+                          <span className="text-sm font-medium text-foreground truncate">{p.playerName ?? p.PlayerName ?? p.fullName ?? p.FullName}</span>
+                          <Badge variant="outline" className="text-xs shrink-0">{p.position ?? p.positionCode ?? p.Position ?? p.PositionCode ?? '—'}</Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div><span className="font-medium">Nationality:</span> {p.nationality ?? p.Nationality ?? 'N/A'}</div>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs md:text-sm text-muted-foreground">No players returned for this club</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -171,7 +390,7 @@ const ClubProfile = () => {
         <TabsContent value="contacts" className="mt-3 md:mt-4 space-y-3 md:space-y-4 min-h-screen md:min-h-fit">
           {canManageClubs && (
             <div className="flex justify-end">
-              <AddContactDialog clubId={club.clubId} onAdd={addClubContact} />
+              <AddContactDialog clubId={club.clubId} onAdd={handleAddContact} />
             </div>
           )}
           {contacts.length === 0 ? (
@@ -191,8 +410,8 @@ const ClubProfile = () => {
                       </div>
                       {canManageClubs && (
                         <div className="flex gap-2 shrink-0">
-                          <EditContactDialog contact={contact} />
-                          <DeleteContactDialog contact={contact} />
+                          <EditContactDialog contact={contact} onSuccess={triggerRemount} />
+                          <DeleteContactDialog contact={contact} onSuccess={triggerRemount} />
                         </div>
                       )}
                     </div>
@@ -208,8 +427,48 @@ const ClubProfile = () => {
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4 min-h-screen md:min-h-fit">
-          <NotesModule entityType="club" entityId={club.clubId} readOnly={!canManageClubs} />
+          <NotesModule
+            entityType="club"
+            entityId={club.clubId}
+            readOnly={!canManageClubs}
+            apiNotes={(mergedClubNotes && mergedClubNotes.length > 0) ? mergedClubNotes : undefined}
+            onNotesChanged={triggerRemount}
+          />
         </TabsContent>
+
+        <TabsContent value="tasks" className="mt-4 min-h-screen md:min-h-fit">
+          <TaskTimeline
+            entityType="club"
+            entityId={club.clubId}
+            readOnly={!canManageClubs}
+            apiTasks={(mergedClubTasks || []).map((t: any) => ({
+              taskId: String(t.taskId ?? t.TaskId ?? ''),
+              title: t.title ?? t.Title ?? '',
+              description: t.description ?? t.Description ?? '',
+              playerId: t.playerId ?? t.PlayerId ?? undefined,
+              clubId: t.clubId ?? t.ClubId ?? club.clubId,
+              assignedToScoutId: t.assignedToScoutId ?? t.assignedToScout ?? '',
+              assignedToName: t.assignedToName ?? t.AssignedToName ?? '',
+              dueDate: t.dueDate ?? t.due_date ?? '',
+              status: t.status ?? 'open',
+              source: t.source ?? 'manual',
+              createdAt: t.createdAt ?? ''
+            }))}
+            playerOptions={taskConfig?.allPlayerForTask ?? undefined}
+            apiScouts={taskConfig?.allScoutForTask ?? undefined}
+            apiClubs={taskConfig?.allClubsForTask ?? undefined}
+            onTaskOperationSuccess={triggerRemount}
+          />
+        </TabsContent>
+
+        <NoteViewDialog noteId={noteIdParam || undefined} note={noteIdParam ? ((apiClubNotesSource||[]).concat(notes)).find(n => String(n.noteId) === String(noteIdParam)) : undefined} open={openNoteModal} onOpenChange={(v) => {
+          setOpenNoteModal(v);
+          if (!v) {
+            const next = new URLSearchParams(searchParams);
+            next.delete('noteId');
+            setSearchParams(next, { replace: true });
+          }
+        }} />
 
         <TabsContent value="documents" className="mt-3 md:mt-4 space-y-3 md:space-y-4 min-h-screen md:min-h-fit">
           <div className="flex flex-col md:flex-row md:justify-end md:items-center gap-2 md:gap-4">
@@ -228,36 +487,48 @@ const ClubProfile = () => {
             </Select>
 
             {/* Upload Button */}
-            {canManageClubs && <div className="w-full md:w-auto"><DocumentDialog clubId={club.clubId} onUpload={addDocument} /></div>}
+            {canManageClubs && <div className="w-full md:w-auto"><DocumentDialog clubId={club.clubId} onUpload={handleUploadDocument} /></div>}
           </div>
-          {filteredDocs.length === 0 ? (
+          {displayedClubDocuments.length === 0 ? (
             <p className="text-center text-muted-foreground py-8 text-sm">No documents uploaded</p>
           ) : (
             <div className="space-y-2">
-              {filteredDocs.map(doc => (
-                <Card key={doc.documentId}>
+              {displayedClubDocuments.map(doc => (
+                <Card key={doc.documentId ?? doc.DocumentId}>
                   <CardContent className="p-3 flex flex-col md:flex-row md:items-center gap-3">
                     <FileText size={18} className="text-primary shrink-0" />
 
                     <div className="flex-1 min-w-0">
                       <p className="text-xs md:text-sm font-medium">
-                        <a
-                          href={`data:application/octet-stream;base64,${doc.fileData}`}
-                          download={doc.documentName}
-                          className="text-blue-600 hover:underline cursor-pointer flex items-center gap-2 break-words"
-                        >
-                          {doc.documentName}  <Download size={16} className="shrink-0" />
-                        </a></p>
+                        {doc.fileData ? (
+                          <a
+                            href={`data:application/octet-stream;base64,${doc.fileData}`}
+                            download={doc.documentName ?? doc.DocumentName}
+                            className="text-blue-600 hover:underline cursor-pointer flex items-center gap-2 break-words"
+                          >
+                            {doc.documentName ?? doc.DocumentName}  <Download size={16} className="shrink-0" />
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => handleDownloadDocument(doc.documentId ?? doc.DocumentId, doc.documentName ?? doc.DocumentName)}
+                            className="text-blue-600 hover:underline cursor-pointer flex items-center gap-2 break-words"
+                            disabled={downloadingDocId === (doc.documentId ?? doc.DocumentId)}
+                          >
+                            <span className="break-words">{doc.documentName ?? doc.DocumentName}</span>
+                            <Download size={16} className="shrink-0" />
+                          </button>
+                        )}
+                      </p>
 
                       <p className="text-xs text-muted-foreground mt-1">
-                        {doc.documentType} · {doc.fileSizeLabel} · {format(new Date(doc.documentDate), 'MMM d, yyyy')}
+                        {(doc.documentType ?? doc.DocumentType) || ''} · {(doc.fileSizeLabel ?? doc.FileSizeLabel) || ''} · {(doc.documentDate ?? doc.DocumentDate) ? format(new Date(doc.documentDate ?? doc.DocumentDate), 'MMM d, yyyy') : ''}
                       </p>
                     </div>
 
                     {canManageClubs && (
                       <div className="flex gap-2 shrink-0">
-                        <DocumentDialog clubId={club.clubId} onUpload={addDocument} doc={doc} />
-                        <DeleteDocumentDialog doc={doc} />
+                        <DocumentDialog clubId={club.clubId} onUpload={handleUploadDocument} doc={doc} onChanged={triggerRemount} />
+                        <DeleteDocumentDialog doc={doc} onDeleted={triggerRemount} />
                       </div>
                     )}
                   </CardContent>
@@ -268,42 +539,41 @@ const ClubProfile = () => {
         </TabsContent>
 
         <TabsContent value="communication" className="mt-4 min-h-screen md:min-h-fit">
-          <EmailModule entityType="club" entityId={club.clubId} readOnly={!canManageClubs} />
+          <EmailModule
+            entityType="club"
+            entityId={club.clubId}
+            readOnly={!canManageClubs}
+            overrideTemplates={clubDetail?.clubDetailsTemplates ?? clubDetail?.club_details_templates ?? undefined}
+          />
         </TabsContent>
 
-        <TabsContent value="commercial" className="mt-3 md:mt-4 min-h-screen md:min-h-fit">
+        <TabsContent value="contracts" className="mt-3 md:mt-4 min-h-screen md:min-h-fit">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm md:text-base">Commercial Contracts</CardTitle>
+              <CardTitle className="text-sm md:text-base">Contracts</CardTitle>
             </CardHeader>
             <CardContent>
-              {commercialContracts.length === 0 ? (
-                <p className="text-xs md:text-sm text-muted-foreground">No commercial contracts found for this club.</p>
+              {profileContracts.length === 0 ? (
+                <p className="text-xs md:text-sm text-muted-foreground">No contracts found for this club.</p>
               ) : (
                 <div className="space-y-3 md:space-y-4">
-                  {commercialContracts.map((contract) => (
+                  {profileContracts.map((contract) => (
                     <Card key={contract.id} className="p-3 md:p-4">
                       <div className="flex flex-col gap-3 md:gap-4">
-                        <h4 className="font-semibold text-sm md:text-base break-words">{contract.sponsor?.companyName}</h4>
+                        <h4 className="font-semibold text-sm md:text-base break-words">{(contract.party1Name || contract.party1Type)} ↔ {(contract.party2Name || contract.party2Type)}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
                           <div>
                             <span className="text-muted-foreground">Start Date:</span>
-                            <span className="ml-2 font-medium">{new Date(contract.contractStartDate).toLocaleDateString()}</span>
+                            <span className="ml-2 font-medium">{new Date(contract.startDate).toLocaleDateString()}</span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">End Date:</span>
-                            <span className="ml-2 font-medium">{new Date(contract.contractEndDate).toLocaleDateString()}</span>
+                            <span className="ml-2 font-medium">{new Date(contract.endDate).toLocaleDateString()}</span>
                           </div>
-                          {contract.expiryDate && (
-                            <div>
-                              <span className="text-muted-foreground">Expiry Date:</span>
-                              <span className="ml-2 font-medium">{new Date(contract.expiryDate).toLocaleDateString()}</span>
-                            </div>
-                          )}
                           <div>
-                            <span className="text-muted-foreground">Status:</span>
-                            <Badge variant={new Date(contract.contractEndDate) > new Date() ? 'default' : 'destructive'} className="ml-2 text-xs">
-                              {new Date(contract.contractEndDate) > new Date() ? 'Active' : 'Expired'}
+                            <span className="text-muted-foreground">Contract Type:</span>
+                            <Badge variant="secondary" className="ml-2 text-xs">
+                              {contract.contractType}
                             </Badge>
                           </div>
                         </div>
@@ -320,7 +590,7 @@ const ClubProfile = () => {
                               {getDocumentLinks(contract.documentPath).map((doc) => (
                                 <a
                                   key={doc.path}
-                                  href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                                  href={`https://localhost:7001${doc.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   download={doc.fileName}
@@ -400,7 +670,9 @@ const AddContactDialog = ({ clubId, onAdd }: { clubId: string; onAdd: (c: ClubCo
     </Dialog>
   );
 };
-const EditContactDialog = ({ contact }: { contact: ClubContact }) => {
+
+
+const EditContactDialog = ({ contact, onSuccess }: { contact: ClubContact; onSuccess?: () => void }) => {
   const { updateClubContact, contactRoles } = useAppContext();
   const [open, setOpen] = useState(false);
 
@@ -431,6 +703,7 @@ const EditContactDialog = ({ contact }: { contact: ClubContact }) => {
 
     setOpen(false);
     setErrors({});
+    if (onSuccess) onSuccess();
   };
 
   return (
@@ -481,13 +754,14 @@ const EditContactDialog = ({ contact }: { contact: ClubContact }) => {
   );
 };
 
-const DeleteContactDialog = ({ contact }: { contact: ClubContact }) => {
+const DeleteContactDialog = ({ contact, onSuccess }: { contact: ClubContact; onSuccess?: () => void }) => {
   const { deleteClubContact } = useAppContext();
   const [open, setOpen] = useState(false);
 
   const handleDelete = async () => {
     await deleteClubContact(contact.clubContactId);
     setOpen(false);
+    if (onSuccess) onSuccess();
   };
 
   return (
@@ -670,13 +944,14 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.onerror = reject;
   });
 
-const DeleteDocumentDialog = ({ doc }) => {
+const DeleteDocumentDialog = ({ doc, onDeleted }: { doc: any; onDeleted?: () => void }) => {
   const { deleteDocument } = useAppContext();
   const [open, setOpen] = useState(false);
 
   const handleDelete = async () => {
     await deleteDocument(doc.documentId);
     setOpen(false);
+    if (onDeleted) onDeleted();
   };
 
   return (
@@ -705,10 +980,12 @@ const DocumentDialog = ({
   clubId,
   onUpload,
   doc, // optional for edit
+  onChanged,
 }: {
   clubId: string;
   onUpload: (file: File, clubId?: string, playerId?: string, type?: string) => void;
   doc?: any;
+  onChanged?: () => void;
 }) => {
   const { updateDocument } = useAppContext();
 
@@ -758,6 +1035,7 @@ const DocumentDialog = ({
       }
 
       await updateDocument(doc.documentId, payload);
+      if (onChanged) onChanged();
     }
     // ✅ ADD MODE
     else {

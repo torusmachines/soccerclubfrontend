@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { fetchSponsors, createSponsorApi, updateSponsorApi, deleteSponsorApi, fetchCommercialContracts, createCommercialContractApi, updateCommercialContractApi, deleteCommercialContractApi, uploadContractDocumentApi, deleteContractDocumentApi, fetchClubs, fetchPlayers } from '@/services/apiService';
+import { fetchSponsors, createSponsorApi, updateSponsorApi, deleteSponsorApi, fetchCommercialContracts, createCommercialContractApi, updateCommercialContractApi, deleteCommercialContractApi, uploadCommercialContractDocumentApi, deleteCommercialContractDocumentApi, fetchClubs, fetchPlayers } from '@/services/apiService';
 import type { Sponsor, CommercialContract, Club, Player } from '@/types';
 import { Plus, Edit, Trash2, Upload, Search, Download } from 'lucide-react';
 
@@ -195,7 +195,7 @@ export const Commercial = () => {
       if (uploadedFiles.length > 0) {
         console.log('Uploading files:', uploadedFiles.length, uploadedFiles);
         try {
-          await uploadContractDocumentApi(contract.id, uploadedFiles);
+          await uploadCommercialContractDocumentApi(contract.id, uploadedFiles);
           toast({ title: 'Success', description: 'Documents uploaded successfully' });
         } catch (uploadError) {
           console.error('Failed to upload documents', uploadError);
@@ -257,7 +257,7 @@ export const Commercial = () => {
 
   const handleDocumentUpload = async (contractId: string, files: File[]) => {
     try {
-      await uploadContractDocumentApi(contractId, files);
+      await uploadCommercialContractDocumentApi(contractId, files);
       toast({ title: 'Success', description: 'Documents uploaded successfully' });
       loadData();
     } catch (error) {
@@ -269,7 +269,7 @@ export const Commercial = () => {
   const handleDeleteContractDocument = async (contractId: string, documentPath: string) => {
     if (!confirm('Are you sure you want to delete this attachment?')) return;
     try {
-      const result = await deleteContractDocumentApi(contractId, documentPath);
+      const result = await deleteCommercialContractDocumentApi(contractId, documentPath);
       toast({ title: 'Success', description: 'Attachment deleted successfully' });
       if (editingContract?.id === contractId) {
         setEditingContract({ ...editingContract, documentPath: result.documentPath });
@@ -595,9 +595,9 @@ export const Commercial = () => {
                             <SelectValue placeholder="Select player" />
                           </SelectTrigger>
                           <SelectContent>
-                            {players.map((player) => (
-                              <SelectItem key={player.id} value={String(player.id)}>
-                                {player.fullName}
+                            {players.filter(p => p.playerId).map((player) => (
+                              <SelectItem key={String(player.playerId)} value={String(player.playerId)}>
+                                {player.playerName || 'Unknown Player'}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -677,7 +677,7 @@ export const Commercial = () => {
                             {getDocumentLinks(editingContract.documentPath).map((doc) => (
                               <li key={doc.path} className="flex items-center justify-between gap-4 rounded-md bg-background px-3 py-2">
                                 <a
-                                  href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                                  href={`https://localhost:7001${doc.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   download={doc.fileName}
@@ -745,7 +745,7 @@ export const Commercial = () => {
                         {getDocumentLinks(contract.documentPath).map((doc, index) => (
                           <a
                             key={index}
-                            href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                            href={`https://localhost:7001${doc.path}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
@@ -836,7 +836,7 @@ export const Commercial = () => {
                           {getDocumentLinks(contract.documentPath).map((doc, index) => (
                             <a
                               key={index}
-                              href={`https://soccerclubbackend.onrender.com${doc.path}`}
+                              href={`https://localhost:7001${doc.path}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs text-blue-600 hover:text-blue-800 hover:underline"

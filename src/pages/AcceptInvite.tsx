@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { acceptInviteApi } from '@/services/apiService';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ const AcceptInvite = () => {
   const inviteToken = searchParams.get('token');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [consentGiven, setConsentGiven] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -50,6 +51,11 @@ const AcceptInvite = () => {
       return;
     }
 
+    if (!consentGiven) {
+      setError('You must accept the privacy policy to continue.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -57,9 +63,17 @@ const AcceptInvite = () => {
         inviteToken,
         password,
         confirmPassword,
+        consentGiven,
       });
-      login(response.token, response.user);
-      navigate('/dashboard', { replace: true });
+      login(response.token, {
+        ...response.user,
+        name: (response.user as any).name ?? response.user.fullName ?? '',
+      });
+      if (response.requiresConsent) {
+        navigate('/consent', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to accept invitation. Please try again.');
     } finally {
@@ -130,10 +144,27 @@ const AcceptInvite = () => {
                 />
               </div>
 
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                  disabled={isLoading}
+                  className="mt-1"
+                />
+                <span>
+                  I agree to the{' '}
+                  <Link to="/privacy-policy" target="_blank" rel="noreferrer" className="underline text-primary">
+                    Privacy Policy
+                  </Link>
+                  .
+                </span>
+              </label>
+
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isLoading || !password || !confirmPassword}
+                disabled={isLoading || !password || !confirmPassword || !consentGiven}
               >
                 {isLoading ? (
                   <>

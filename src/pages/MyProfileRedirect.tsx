@@ -14,6 +14,11 @@ const MyProfileRedirect = () => {
       navigate('/dashboard');
       return;
     }
+    // Prefer server-provided loginUser when available
+    if (user.loginUser && user.loginUser.type === 'Player' && user.loginUser.id) {
+      navigate(`/players/${user.loginUser.id}?edit=true`, { replace: true });
+      return;
+    }
 
     if (isPlayerRole(user.role)) {
       const found = players.find(p => (p.player_email || '').trim().toLowerCase() === (user.email || '').trim().toLowerCase());
@@ -26,7 +31,13 @@ const MyProfileRedirect = () => {
       return;
     }
 
-    // Scouts and others: go to scouts list and open own edit modal if available
+    // Scouts and others: prefer loginUser id for scout when available
+    if (user.loginUser && user.loginUser.type === 'Scout') {
+      // open scouts list and rely on editMe query param handling
+      navigate('/scouts?editMe=true', { replace: true });
+      return;
+    }
+
     if (user.role === 'Scout') {
       navigate('/scouts?editMe=true', { replace: true });
       return;

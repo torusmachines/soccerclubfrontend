@@ -1,0 +1,38 @@
+.contract-party-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.contract-party-chip {
+  min-height: 2.5rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.contract-party-chip:hover {
+  border-color: hsl(var(--primary) / 0.55);
+  background: hsl(var(--muted));
+}
+
+.contract-party-chip:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.contract-party-chip--active {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+}
+
+@media (min-width: 640px) {
+  .contract-party-selector-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

@@ -15,6 +15,11 @@ interface TaskTimelineProps {
   entityType: 'player' | 'club';
   entityId: string;
   readOnly?: boolean;
+  apiTasks?: Task[];
+  apiScouts?: any[];
+  apiClubs?: any[];
+  playerOptions?: any[];
+  onTaskOperationSuccess?: () => void | Promise<void>;
 }
 
 // const sourceColors: Record<string, string> = {
@@ -33,7 +38,7 @@ const sourceColors: Record<string, string> = {
   personal: 'bg-pink-100 text-pink-800',     // ← new
 };
 
-export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTimelineProps) => {
+export const TaskTimeline = ({ entityType, entityId, readOnly = false, apiTasks, apiScouts, apiClubs, playerOptions, onTaskOperationSuccess }: TaskTimelineProps) => {
   const { user } = useAuth();
   const isPlayer = isPlayerRole(user?.role);
   const isScout = isScoutRole(user?.role);
@@ -41,23 +46,37 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // const entityTasks = useMemo(() =>
-  //   tasks.filter(t => Number(t.playerId) === Number(entityType) && t.clubId === entityId)
-  //     .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()),
-  //   [tasks, entityType, entityId]
-  // );
   const entityTasks = useMemo(() =>
-    tasks
+    (apiTasks ?? tasks)
       .filter(t =>
         (entityType === 'player' && String(t.playerId) === String(entityId)) ||
         (entityType === 'club' && String(t.clubId) === String(entityId))
       )
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()),
-    [tasks, entityType, entityId]
+    [apiTasks, tasks, entityType, entityId]
   );
 
-  const toggleStatus = (task: Task) => {
-    updateTask({ ...task, status: task.status === 'open' ? 'completed' : 'open' });
+  const toggleStatus = async (task: Task) => {
+    const currentStatus = String(task.status || '').toLowerCase();
+    const nextStatus = currentStatus === 'closed' || currentStatus === 'completed' ? 'open' : 'closed';
+    const success = await updateTask({ ...task, status: nextStatus });
+    if (success) {
+      await onTaskOperationSuccess?.();
+    }
+  };
+
+  const handleUpdateTask = async (task: Task) => {
+    const success = await updateTask(task);
+    if (success) {
+      await onTaskOperationSuccess?.();
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    const success = await deleteTask(taskId);
+    if (success) {
+      await onTaskOperationSuccess?.();
+    }
   };
 
   const handleTaskClick = (task: Task) => {
@@ -81,38 +100,17 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
       {entityTasks.length === 0 ? (
         <p className="text-center text-muted-foreground py-8">No tasks</p>
       ) : (
-        entityTasks.map(task => (
+        entityTasks.map(task => {
+          const currentStatus = String(task.status || '').toLowerCase();
+          const isCompleted = currentStatus === 'closed' || currentStatus === 'completed';
+          const displayStatus = (currentStatus === 'closed' || currentStatus === 'completed' || currentStatus === 'complete') ? 'Completed' : (currentStatus ? currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1) : 'Unknown');
+          return (
 
-          // <Card key={task.taskId} className={task.status === 'completed' ? 'opacity-60' : ''}>
-          //   <CardContent className="p-4">
-          //     <div className="flex items-start gap-3">
-          //       <button onClick={() => toggleStatus(task)} className="mt-0.5">
-          //         {task.status === 'completed' ? (
-          //           <CheckCircle size={18} className="text-green-600" />
-          //         ) : (
-          //           <Circle size={18} className="text-muted-foreground" />
-          //         )}
-          //       </button>
-          //       <div className="flex-1">
-          //         <div className="flex items-center gap-2 flex-wrap">
-          //           <span className={`text-sm font-medium ${task.status === 'completed' ? 'line-through' : ''}`}>{task.title}</span>
-          //           <Badge variant="secondary" className={sourceColors[task.source]}>{task.source}</Badge>
-          //         </div>
-          //         <p className="text-xs text-muted-foreground mt-1">{task.description}</p>
-          //         <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-          //           <span className="flex items-center gap-1"><Calendar size={10} /> {format(new Date(task.dueDate), 'MMM d, yyyy')}</span>
-          //           <Badge variant={task.status === 'open' ? 'default' : 'secondary'} className="text-[10px]">{task.status}</Badge>
-          //         </div>
-          //       </div>
-          //     </div>
-          //   </CardContent>
-          // </Card>
-
-          <Card key={task.taskId} className={`cursor-pointer transition-all hover:shadow-md ${task.status === 'completed' ? 'opacity-60' : ''}`} onClick={() => handleTaskClick(task)}>
+          <Card key={task.taskId} className={`cursor-pointer transition-all hover:shadow-md ${isCompleted ? 'opacity-60' : ''}`} onClick={() => handleTaskClick(task)}>
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
-                <button onClick={(e) => { e.stopPropagation(); !isPlayer && !readOnly && toggleStatus(task); }} className="mt-0.5" disabled={isPlayer || readOnly}>
-                  {task.status === 'completed' ? (
+                  <button onClick={(e) => { e.stopPropagation(); !isPlayer && !readOnly && toggleStatus(task); }} className="mt-0.5" disabled={isPlayer || readOnly}>
+                  {isCompleted ? (
                     <CheckCircle size={18} className="text-green-600" />
                   ) : (
                     <Circle size={18} className="text-muted-foreground" />
@@ -120,7 +118,7 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
                 </button>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-sm font-medium ${task.status === 'completed' ? 'line-through' : ''}`}>
+                    <span className={`text-sm font-medium ${isCompleted ? 'line-through' : ''}`}>
                       {task.title}
                     </span>
                     <Badge variant="secondary" className={sourceColors[task.source] ?? 'bg-gray-100 text-gray-800'}>
@@ -132,15 +130,15 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
                     <span className="flex items-center gap-1">
                       <Calendar size={10} /> {format(new Date(task.dueDate), 'MMM d, yyyy')}
                     </span>
-                    <Badge variant={task.status === 'open' ? 'default' : 'secondary'} className="text-[10px]">
-                      {task.status}
+                    <Badge variant={currentStatus === 'open' ? 'default' : 'secondary'} className="text-[10px]">
+                      {displayStatus}
                     </Badge>
                   </div>
                 </div>
                 {/* Delete button — only for manual tasks, auto-tasks are system-managed */}
                 {!isPlayer && !readOnly && task.source === 'manual' && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); deleteTask(task.taskId); }}
+                    onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.taskId); }}
                     className="text-muted-foreground hover:text-destructive transition-colors mt-0.5"
                   >
                     <Trash2 size={14} />
@@ -149,7 +147,8 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
               </div>
             </CardContent>
           </Card>
-        ))
+        );
+        })
       )}
 
       {/* Task Details Modal */}
@@ -157,12 +156,17 @@ export const TaskTimeline = ({ entityType, entityId, readOnly = false }: TaskTim
         task={selectedTask}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        assignedScoutName={selectedTask ? (scouts.find(s => s.scoutId === selectedTask.assignedToScoutId)?.scoutName || 'Auto-generated') : 'Auto-generated'}
+        assignedScoutName={selectedTask?.assignedToName || (selectedTask ? (scouts.find(s => String(s.scoutId) === String(selectedTask.assignedToScoutId))?.scoutName || 'Auto-generated') : 'Auto-generated')}
         createdByName={user?.name || 'Admin'}
         getEntityName={getEntityName}
-        scouts={scouts}
-        players={players}
-        clubs={clubs}
+        onUpdateTask={handleUpdateTask}
+        scouts={apiScouts || scouts}
+        players={
+          playerOptions
+            ? playerOptions.map(p => ({ id: p.playerId ?? p.id, fullName: p.playerName ?? p.fullName, sportId: p.sportId, sportName: p.sportName }))
+            : players
+        }
+        clubs={apiClubs || clubs}
         isScout={isScout}
       />
     </div>

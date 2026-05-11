@@ -1,4 +1,52 @@
+export interface PlayerForPage {
+  playerId: string;
+  userId?: string;
+  playerEmail?: string;
+  userStatus?: string;
+  playerName: string;
+  clubName: string;
+  position: string;
+  nationality: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  overallRating: number;
+  agencyContractStatus: string;
+  scoutId?: string;
+  scoutName?: string;
+  sportId?: number;
+  sportName?: string;
+}
+
+export interface PlayersOtherData {
+  scoutOptions: Array<{
+    scoutId: string;
+    scoutName: string;
+  }>;
+  positionOptions: Array<{
+    positionId: string;
+    positionName: string;
+    positionCode: string;
+  }>;
+  sportsOptions: Array<{
+    sportId: number;
+    sportName: string;
+  }>;
+  loggedInScoutIsShowPlayer?: boolean;
+}
+
+export interface PlayersForPageResponse {
+  players: PlayerForPage[];
+  otherData: PlayersOtherData;
+}
+
 export interface Player {
+  playerName?: string;
+  playerId?: string | number;
+  clubName?: string;
+  overallRating?: number;
+  agencyContractStatus?: string;
+  scoutId?: string;
+  scoutName?: string;
 
   id: string,
   fullName: string,
@@ -24,6 +72,37 @@ export interface Player {
   sportName?: string;
   contractStartWithCoach?: string;
   contractEndWithCoach?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  userStatus?: string;
+  // New profile/contact fields
+  gender?: string;
+  placeOfBirth?: string;
+  primaryLanguage?: string;
+  secondaryLanguage?: string;
+  profileVisibility?: boolean;
+
+  phoneNumber?: string;
+  alternatePhone?: string;
+  emergencyContactName?: string;
+  emergencyContactNumber?: string;
+
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+
+  secondaryPosition?: string;
+  jerseyNumber?: number;
+  experienceYears?: number;
+  playingLevel?: string;
+
+  dominantSide?: string;
+  fitnessLevel?: string;
+  injuryStatus?: string;
+
+  coachEmail?: string;
+  coachPhone?: string;
 }
 
 export interface Scout {
@@ -89,6 +168,7 @@ export interface SkillDetail {
 //   createdAt: string;
 // }
 export interface Review {
+  comment: any;
   reviewId: string;
   playerId: string;
   scoutId: string;
@@ -165,7 +245,8 @@ export interface Club {
   country: string,
   addressLine: string,
   logoUrl: string,
-  createdAt: string
+  createdAt: string,
+  clubContactCount?: number
 }
 
 // export interface ClubContact {
@@ -188,7 +269,28 @@ export interface ClubContact {
 }
 
 // Note types
-export type NoteCategory = 'private' | 'medical' | 'technical' | 'performance' | 'meeting';
+export type NoteCategory =
+  | 'private'
+  | 'medical'
+  | 'technical'
+  | 'performance'
+  | 'meeting'
+  | 'announcement'
+  | 'reminder'
+  | 'report'
+  | 'discussion'
+  | 'decision'
+  | 'issue'
+  | 'update'
+  | 'training_session'
+  | 'match_review'
+  | 'injury_update'
+  | 'transfer_update'
+  | 'disciplinary'
+  | 'financial'
+  | 'sponsorship'
+  | 'event'
+  | 'facility';
 export type EntityType = 'player' | 'club' | string;
 
 // export interface Note {
@@ -210,6 +312,8 @@ export interface Note {
   description: string;
   category: NoteCategory | string;
   followUpDate?: string;
+  meetingDate?: string;
+  attendees?: string;
   createdByScoutId: string;
   createdAt: string;
   isVisibleToPlayer?: boolean;
@@ -240,6 +344,8 @@ export interface Task {
   clubId?: string;
 
   assignedToScoutId: string;
+  assignedToID?: string;
+  assignedToName?: string;
 
   dueDate: string;
   status: TaskStatus | string;
@@ -332,6 +438,28 @@ export const NOTE_CATEGORIES: { value: NoteCategory; label: string }[] = [
   { value: 'technical', label: 'Technical' },
   { value: 'performance', label: 'Performance' },
   { value: 'meeting', label: 'Meeting' },
+
+  // Club / Operations
+  { value: 'announcement', label: 'Announcement' },
+  { value: 'reminder', label: 'Reminder' },
+  { value: 'report', label: 'Report' },
+  { value: 'discussion', label: 'Discussion' },
+  { value: 'decision', label: 'Decision' },
+  { value: 'issue', label: 'Issue' },
+  { value: 'update', label: 'Update' },
+
+  // Sports-specific ops
+  { value: 'training_session', label: 'Training Session' },
+  { value: 'match_review', label: 'Match Review' },
+  { value: 'injury_update', label: 'Injury Update' },
+  { value: 'transfer_update', label: 'Transfer Update' },
+  { value: 'disciplinary', label: 'Disciplinary Action' },
+
+  // Club management
+  { value: 'financial', label: 'Financial Update' },
+  { value: 'sponsorship', label: 'Sponsorship Update' },
+  { value: 'event', label: 'Event Planning' },
+  { value: 'facility', label: 'Facility Update' },
 ];
 
 export interface ContactRole {
@@ -364,6 +492,18 @@ export interface Sponsor {
   updatedAt: string;
 }
 
+export interface SponsorComment {
+  commentId: string;
+  sponsorId: string;
+  comment: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  createdByRole?: string;
+  isAdminComment: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface CommercialContract {
   id: string;
   sponsorId: string;
@@ -378,6 +518,28 @@ export interface CommercialContract {
   createdAt: string;
   updatedAt: string;
   sponsor?: Sponsor;
+}
+
+export type ContractType = 'PlayerClub' | 'ClubCompany' | 'PlayerCompany' | 'PlayerCoach';
+export type PartyType = 'Player' | 'Club' | 'Company' | 'Coach';
+
+export interface Contract {
+  id: string;
+  party1Id: string;
+  party1Type: PartyType;
+  party1Name?: string;
+  party2Id: string;
+  party2Type: PartyType;
+  party2Name?: string;
+  contractType: ContractType;
+  startDate: string;
+  endDate: string;
+  expiryDate?: string;
+  contractDetails?: string;
+  documentPath?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiryStatus: string;
 }
 
 export interface AiPlanContent {
@@ -401,13 +563,12 @@ export interface AiPlanResponse {
   version: number;
   createdAt: string;
   skillType?: string;
-  currentLevel?: string;
-  targetLevel?: string;
   durationWeeks?: number;
   trainingDaysPerWeek?: number;
   sessionDurationMinutes?: number;
-  hasInjury?: boolean;
-  injuryDetails?: string;
+  topNRatings?: number;
+  currentRating?: number;
+  targetRating?: number;
   pdfPath?: string;
 }
 
@@ -417,13 +578,12 @@ export interface AiPlanHistoryResponse {
 
 export interface AiPlanGeneratePayload {
   skillType: string;
-  currentLevel: 'Beginner' | 'Intermediate' | 'Advanced';
-  targetLevel: 'Beginner' | 'Intermediate' | 'Advanced';
   durationWeeks: number;
   trainingDaysPerWeek: number;
   sessionDurationMinutes: number;
-  hasInjury: boolean;
-  injuryDetails?: string;
+  topNRatings: number;
+  currentRating: number;
+  targetRating?: number;
 }
 
 export const CLUB_CONTACT_ROLES = ['Coach', 'Technical Director', 'Commercial Manager', 'Scout'];

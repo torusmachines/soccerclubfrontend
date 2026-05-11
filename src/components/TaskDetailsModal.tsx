@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { CheckCircle, Circle, Calendar, Edit, Save, Trash2, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/context/AuthContext';
+import { isPlayerRole } from '@/lib/accessPolicy';
 import { fetchTaskComments, createTaskCommentApi, updateTaskCommentApi, deleteTaskCommentApi } from '@/services/apiService';
 
 interface TaskDetailsModalProps {
@@ -35,6 +36,12 @@ const sourceColors: Record<string, string> = {
     manual: 'bg-gray-100 text-gray-800',
 };
 
+const formatDateSafe = (value: string | Date | null | undefined, pattern: string): string => {
+    if (!value) return 'N/A';
+    const parsed = value instanceof Date ? value : new Date(value);
+    return isValid(parsed) ? format(parsed, pattern) : 'N/A';
+};
+
 export const TaskDetailsModal = ({
     task,
     isOpen,
@@ -53,6 +60,7 @@ export const TaskDetailsModal = ({
     const [editAssignedToScoutId, setEditAssignedToScoutId] = useState('');
     const [editAssignedEntityType, setEditAssignedEntityType] = useState<'player' | 'club'>('player');
     const [editAssignedEntityId, setEditAssignedEntityId] = useState('');
+    const [editStatus, setEditStatus] = useState<string>('');
 
     const getDisplayEntityName = (task: Task): string => {
         if (task.playerId) {
@@ -67,26 +75,45 @@ export const TaskDetailsModal = ({
     useEffect(() => {
         if (task) {
             setEditDueDate(task.dueDate);
-            setEditAssignedToScoutId(task.assignedToScoutId);
-            setEditAssignedEntityType(task.playerId ? 'player' : 'club');
-            setEditAssignedEntityId(task.playerId ? String(task.playerId) : (task.clubId || ''));
+            // prefer new shape fields if present
+            const assignedBy = (task as any).assignedById ?? (task as any).assignedToScoutId ?? '';
+            setEditAssignedToScoutId(String(assignedBy));
+
+            const assignedToId = (task as any).assignedToId || task.playerId || task.clubId || '';
+            // determine whether assignedToId refers to a player or a club
+            const isPlayer = players.some(p => String(p.id) === String(assignedToId));
+            const isClub = clubs.some(c => String(c.clubId) === String(assignedToId));
+            if (task.playerId) setEditAssignedEntityType('player');
+            else if (task.clubId) setEditAssignedEntityType('club');
+            else if (isPlayer) setEditAssignedEntityType('player');
+            else if (isClub) setEditAssignedEntityType('club');
+            else setEditAssignedEntityType('player');
+
+            setEditAssignedEntityId(task.playerId ? String(task.playerId) : (task.clubId || String(assignedToId || '')));
+            const s = String((task as any).taskStatus ?? (task as any).status ?? 'open').toLowerCase();
+            setEditStatus((s === 'closed' || s === 'completed' || s === 'complete') ? 'closed' : 'open');
         }
     }, [task]);
 
     const handleSave = () => {
         if (task && onUpdateTask) {
-            onUpdateTask({
+            const updated: Task = {
                 ...task,
                 dueDate: editDueDate,
                 assignedToScoutId: editAssignedToScoutId,
                 playerId: editAssignedEntityType === 'player' ? editAssignedEntityId : undefined,
                 clubId: editAssignedEntityType === 'club' ? editAssignedEntityId : undefined,
-            });
+                status: editStatus,
+                ...(editStatus ? { taskStatus: editStatus } : {})
+            } as Task;
+
+            onUpdateTask(updated);
         }
         setIsEditing(false);
     };
 
     const { user } = useAuth();
+    const isPlayer = isPlayerRole(user?.role);
     const [comments, setComments] = useState<TaskComment[]>([]);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
@@ -265,7 +292,12 @@ export const TaskDetailsModal = ({
         }
     };
 
-    if (!task) return null;
+        if (!task) return null;
+
+        const _normalizedStatusRaw = String(
+            (task as any).taskStatus ?? (task as any).status ?? (task as any).statusFromTable ?? (task as any).statusLabel ?? ''
+        ).toLowerCase();
+        const _displayStatus = (_normalizedStatusRaw === 'closed' || _normalizedStatusRaw === 'completed' || _normalizedStatusRaw === 'complete' || _normalizedStatusRaw.includes('closed') || _normalizedStatusRaw.includes('completed') || _normalizedStatusRaw.includes('complete')) ? 'completed' : 'open';
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -273,7 +305,7 @@ export const TaskDetailsModal = ({
                 <DialogHeader>
                     <div className="flex items-center justify-between">
                         <DialogTitle className="text-xl">{task.title}</DialogTitle>
-                        {onUpdateTask && (
+                        {onUpdateTask && !isPlayer && (
                             <div className="flex gap-2 mt-3">
                                 {isEditing ? (
                                     <>
@@ -307,10 +339,22 @@ export const TaskDetailsModal = ({
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <h3 className="text-sm font-semibold text-muted-foreground mb-2">Status</h3>
-                                <div className="flex items-center gap-2">
-                                    {task.status === 'completed' ? <CheckCircle size={18} className="text-green-600" /> : <Circle size={18} className="text-muted-foreground" />}
-                                    <span className="text-sm capitalize">{task.status}</span>
-                                </div>
+                                {isEditing ? (
+                                    <Select value={editStatus} onValueChange={setEditStatus}>
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="open">Open</SelectItem>
+                                            <SelectItem value="closed">Completed</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        {_displayStatus === 'completed' ? <CheckCircle size={18} className="text-green-600" /> : <Circle size={18} className="text-muted-foreground" />}
+                                        <span className="text-sm">{_displayStatus}</span>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -332,7 +376,7 @@ export const TaskDetailsModal = ({
                                 ) : (
                                     <div className="flex items-center gap-2 text-sm mt-2">
                                         <Calendar size={16} />
-                                        {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                                        {formatDateSafe(task.dueDate, 'MMM d, yyyy')}
                                     </div>
                                 )}
                             </div>
@@ -366,7 +410,7 @@ export const TaskDetailsModal = ({
                                                     </SelectItem>
                                                 ))}
                                                 {editAssignedEntityType === 'club' && clubs.map(club => (
-                                                    <SelectItem key={club.clubId} value={club.clubId}>
+                                                    <SelectItem key={club.clubId} value={String(club.clubId)}>
                                                         {club.clubName}
                                                     </SelectItem>
                                                 ))}
@@ -374,7 +418,7 @@ export const TaskDetailsModal = ({
                                         </Select>
                                     </div>
                                 ) : (
-                                    <p className="text-sm mt-2">{task ? getDisplayEntityName(task) : 'N/A'}</p>
+                                    <p className="text-sm mt-2">{task ? (getDisplayEntityName(task) || (task as any).assignedToName || 'N/A') : 'N/A'}</p>
                                 )}
                             </div>
                         </div>
@@ -382,26 +426,26 @@ export const TaskDetailsModal = ({
                         <div>
                             <Label className="text-sm font-semibold text-muted-foreground">Assigned By</Label>
                             {isEditing ? (
-                                <Select value={editAssignedToScoutId} onValueChange={setEditAssignedToScoutId}>
-                                    <SelectTrigger className="mt-2">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {scouts.map(scout => (
-                                            <SelectItem key={scout.scoutId} value={scout.scoutId}>
-                                                {scout.scoutName}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            ) : (
-                                <p className="text-sm mt-2">{createdByName || assignedScoutName}</p>
-                            )}
-                        </div>
+                            <Select value={editAssignedToScoutId} onValueChange={setEditAssignedToScoutId}>
+                                <SelectTrigger className="mt-2">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {scouts.map(scout => (
+                                        <SelectItem key={scout.scoutId} value={String(scout.scoutId)}>
+                                            {scout.scoutName}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <p className="text-sm mt-2">{(task as any).assignedByName || task?.assignedToName || assignedScoutName || 'N/A'}</p>
+                        )}
+                    </div>
 
                         <div>
                             <h3 className="text-sm font-semibold text-muted-foreground mb-2">Created</h3>
-                            <p className="text-sm text-muted-foreground">{format(new Date(task.createdAt), 'MMM d, yyyy \'at\' h:mm a')}</p>
+                            <p className="text-sm text-muted-foreground">{task?.createdAt ? formatDateSafe(task.createdAt, 'MMM d, yyyy \'at\' h:mm a') : 'N/A'}</p>
                         </div>
                     </div>
 
@@ -624,7 +668,7 @@ export const TaskDetailsModal = ({
                                                         <span className="font-medium">{comment.userName}</span>
                                                         <span>•</span>
                                                         <span>
-                                                            {format(new Date(comment.createdAt), "MMM d, yyyy h:mm a")}
+                                                            {formatDateSafe(comment.createdAt, "MMM d, yyyy h:mm a")}
                                                         </span>
                                                         {comment.updatedAt &&
                                                             comment.updatedAt !== comment.createdAt && (

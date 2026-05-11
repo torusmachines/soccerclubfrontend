@@ -593,40 +593,7 @@ const CompanyProfile = () => {
               <Input placeholder="YouTube URL" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} />
             </div>
           </div>
-
-          {/* ================= CONTACT ROLES MANAGEMENT ================= */}
-          {/* <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Contact Roles Management</h2>
-              <Button variant="outline" size="sm" onClick={() => navigate('/settings/manage-roles')}>
-                Manage Roles →
-              </Button>
-            </div>
-            <div className="border rounded-lg bg-muted/20">
-              <div className="p-4">
-                <p className="text-muted-foreground text-center py-8">
-                  Contact roles are managed separately. Click "Manage Roles" to view and edit contact roles.
-                </p>
-              </div>
-            </div>
-          </div> */}
-
-          {/* ================= PLAYER POSITIONS MANAGEMENT ================= */}
-          {/* <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Player Positions Management</h2>
-              <Button variant="outline" size="sm" onClick={() => navigate('/settings/manage-positions')}>
-                Manage Positions →
-              </Button>
-            </div>
-            <div className="border rounded-lg bg-muted/20">
-              <div className="p-4">
-                <p className="text-muted-foreground text-center py-8">
-                  Player positions are managed separately. Click "Manage Positions" to view and edit player positions.
-                </p>
-              </div>
-            </div>
-          </div> */}
+        
 
           {/* ================= ACTIONS ================= */}
           <div className="flex justify-end gap-3 pt-4 border-t">

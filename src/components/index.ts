@@ -1,5 +1,5 @@
 export { AiPlanModule } from './AiPlanModule';
-export { NotesModule } from './NotesModule';
+export { NotesModule, NoteViewDialog } from './NotesModule';
 export { EmailModule } from './EmailModule';
 export { TaskTimeline } from './TaskTimeline';
 export { StarRating } from './StarRating';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { loginApi } from '@/services/apiService';
 import { Button } from '@/components/ui/button';
@@ -24,8 +24,15 @@ const Login = () => {
 
     try {
       const response = await loginApi({ email, password });
-      login(response.token, response.user);
-      navigate('/dashboard', { replace: true });
+      login(response.token, {
+        ...response.user,
+        name: (response.user as any).name ?? response.user.fullName ?? '',
+      });
+      if (response.requiresConsent) {
+        navigate('/consent', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err: any) {
       setError(err?.message || 'Login failed. Please try again.');
     } finally {
@@ -99,7 +106,13 @@ const Login = () => {
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t text-center">
+          <div className="mt-6 pt-6 border-t space-y-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?{' '}
+              <Link to="/signup" className="text-primary font-medium underline underline-offset-2">
+                Sign Up
+              </Link>
+            </p>
             <p className="text-xs text-muted-foreground">
               If you haven't received an invitation, please contact your administrator.
             </p>

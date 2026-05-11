@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { fetchTemplates } from '@/services/apiService';
 import { useAppContext } from '@/context/PlayerContext';
 import { Template, TemplateType, TEMPLATE_VARIABLES } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,24 @@ const typeColors: Record<TemplateType, string> = { email: 'bg-blue-100 text-blue
 const Templates = () => {
   const { templates, addTemplate, updateTemplate, deleteTemplate } = useAppContext();
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (templates.length > 0) return;
+      setIsLoadingTemplates(true);
+      try {
+        await fetchTemplates();
+      } catch (err) {
+        console.error('Failed to fetch templates for spinner', err);
+      } finally {
+        if (!cancelled) setIsLoadingTemplates(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [templates.length]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -31,35 +50,43 @@ const Templates = () => {
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {templates.map(tmpl => {
-          const Icon = typeIcons[tmpl.templateType];
-          return (
-            <Card key={tmpl.templateId}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Icon size={16} className="text-primary" />
-                    <span className="font-medium text-sm">{tmpl.templateName}</span>
-                    <Badge variant="secondary" className={typeColors[tmpl.templateType]}>{tmpl.templateType}</Badge>
-                  </div>
-                  <div className="flex gap-1">
-                    <TemplateDialog template={tmpl} onSave={updateTemplate} />
-                    {/* <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteTemplate(tmpl.templateId)}>
-                      <Trash2 size={12} />
-                    </Button> */}
-                    <DeleteTemplateDialog
-                      template={tmpl}
-                      onDelete={deleteTemplate}
-                    />
-                  </div>
-                </div>
-                {tmpl.subject && <p className="text-xs text-muted-foreground mb-1">Subject: {tmpl.subject}</p>}
-                <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-line">{tmpl.body}</p>
-                <p className="text-[10px] text-muted-foreground mt-2">Created: {format(new Date(tmpl.createdAt), 'MMM d, yyyy')}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {isLoadingTemplates ? (
+          <div className="col-span-2 flex items-center justify-center py-8">
+            <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            {templates.map(tmpl => {
+              const Icon = typeIcons[tmpl.templateType];
+              return (
+                <Card key={tmpl.templateId}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Icon size={16} className="text-primary" />
+                        <span className="font-medium text-sm">{tmpl.templateName}</span>
+                        <Badge variant="secondary" className={typeColors[tmpl.templateType]}>{tmpl.templateType}</Badge>
+                      </div>
+                      <div className="flex gap-1">
+                        <TemplateDialog template={tmpl} onSave={updateTemplate} />
+                        {/* <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteTemplate(tmpl.templateId)}>
+                          <Trash2 size={12} />
+                        </Button> */}
+                        <DeleteTemplateDialog
+                          template={tmpl}
+                          onDelete={deleteTemplate}
+                        />
+                      </div>
+                    </div>
+                    {tmpl.subject && <p className="text-xs text-muted-foreground mb-1">Subject: {tmpl.subject}</p>}
+                    <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-line">{tmpl.body}</p>
+                    <p className="text-[10px] text-muted-foreground mt-2">Created: {format(new Date(tmpl.createdAt), 'MMM d, yyyy')}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </>
+        )}
       </div>
       {templates.length === 0 && <p className="text-center text-muted-foreground py-8">No templates created</p>}
     </div>

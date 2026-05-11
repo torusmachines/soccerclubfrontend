@@ -1,14 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import axios from 'axios';
+import { getMeApi } from '@/services/apiService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AuthUser {
   name: string;
   id: string;
+  scoutId?: string;
   email: string;
   fullName: string;
   role: string;
+  userStatus?: string;
+  consentGiven?: boolean;
+  consentGivenAt?: string;
+  consentVersion?: string;
+  isActive?: boolean;
+  loginUser?: { id: string; type: 'Player' | 'Scout' } | null;
 }
 
 interface AuthContextType {
@@ -16,7 +23,7 @@ interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string, user: AuthUser) => void;
+  login: (token: string, user: Omit<AuthUser, 'name'> & Partial<Pick<AuthUser, 'name'>>) => void;
   logout: () => void;
   loadUser: () => Promise<void>;
 }
@@ -37,11 +44,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const login = useCallback((newToken: string, newUser: AuthUser) => {
+  const normalizeAuthUser = useCallback((incomingUser: Omit<AuthUser, 'name'> & Partial<Pick<AuthUser, 'name'>>): AuthUser => {
+    const resolvedName = incomingUser.name?.trim() || incomingUser.fullName?.trim() || '';
+    return {
+      ...incomingUser,
+      name: resolvedName,
+    };
+  }, []);
+
+  const login = useCallback((newToken: string, newUser: Omit<AuthUser, 'name'> & Partial<Pick<AuthUser, 'name'>>) => {
     localStorage.setItem(TOKEN_KEY, newToken);
     setToken(newToken);
-    setUser(newUser);
-  }, []);
+    setUser(normalizeAuthUser(newUser));
+  }, [normalizeAuthUser]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
@@ -56,11 +71,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     try {
-      const res = await axios.get<AuthUser>(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      });
+      const res = await getMeApi();
       setToken(storedToken);
-      setUser(res.data);
+      setUser(normalizeAuthUser(res as Omit<AuthUser, 'name'> & Partial<Pick<AuthUser, 'name'>>));
     } catch {
       // Token is invalid / expired — clear it
       localStorage.removeItem(TOKEN_KEY);
@@ -69,7 +82,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [normalizeAuthUser]);
 
   useEffect(() => {
     loadUser();
@@ -96,6 +109,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 export const useAuth = (): AuthContextType => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
+  if (!ctx) {
+    console.error('useAuth fallback activated: AuthContext is unavailable. Ensure components are wrapped in <AuthProvider>.');
+    return {
+      token: null,
+      user: null,
+      isAuthenticated: false,
+      isLoading: true,
+      login: () => {
+        // no-op fallback to avoid runtime crash during transient HMR states
+      },
+      logout: () => {
+        // no-op fallback to avoid runtime crash during transient HMR states
+      },
+      loadUser: async () => {
+        // no-op fallback to avoid runtime crash during transient HMR states
+      },
+    };
+  }
   return ctx;
 };

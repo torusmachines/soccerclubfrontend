@@ -7,21 +7,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Loader2, Brain, Calendar, TrendingUp, AlertTriangle, Target, Clock, CheckCircle } from 'lucide-react';
 import { generateAiPlanApi, getLatestAiPlanApi, getAiPlanHistoryApi } from '@/services/apiService';
-import { AiPlanResponse, AiPlanHistoryResponse } from '@/types';
+import { AiPlanResponse, AiPlanHistoryResponse, Review } from '@/types';
 import { useAppContext } from '@/context/PlayerContext';
 import { getRatingCategories } from '@/lib/playerUtils';
 import { toast } from 'sonner';
 
 interface AiPlanModuleProps {
   playerId: string;
+  reviews?: Review[];
 }
 
-export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
-  const { players, sportActivities } = useAppContext();
+export const AiPlanModule = ({ playerId, reviews: reviewsProp }: AiPlanModuleProps) => {
+  const { players, reviews: contextReviews, sportActivities } = useAppContext();
+  // Prefer reviews passed as prop (from PlayerProfile, already enriched with averageRating)
+  // Fall back to context reviews if no prop provided
+  const reviews = reviewsProp ?? contextReviews;
   const [currentPlan, setCurrentPlan] = useState<AiPlanResponse | null>(null);
   const [planHistory, setPlanHistory] = useState<AiPlanResponse[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -30,13 +32,12 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configForm, setConfigForm] = useState({
     skillType: '',
-    currentLevel: 'Beginner' as 'Beginner' | 'Intermediate' | 'Advanced',
-    targetLevel: 'Advanced' as 'Beginner' | 'Intermediate' | 'Advanced',
     durationWeeks: '4',
     trainingDaysPerWeek: '3',
     sessionDurationMinutes: '45',
-    hasInjury: false,
-    injuryDetails: ''
+    topNRatings: '',
+    currentRating: 0,
+    targetRating: ''
   });
 
   const player = useMemo(
@@ -59,6 +60,25 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
     }
   }, [skillTypeOptions, configForm.skillType]);
 
+  // Compute currentRating from top N overallPerformance ratings of this player's reviews
+  useEffect(() => {
+    if (configForm.topNRatings === '') {
+      setConfigForm(prev => ({ ...prev, currentRating: 0 }));
+      return;
+    }
+    const n = Math.min(Math.max(parseInt(configForm.topNRatings) || 1, 1), 5);
+    const playerReviews = reviews.filter(r => String(r.playerId) === String(playerId));
+    const performances = playerReviews
+      .map(r => r.revRatings?.overallPerformance ?? (r as any).averageRating)
+      .filter((v): v is number => typeof v === 'number' && v > 0)
+      .sort((a, b) => b - a)
+      .slice(0, n);
+    const avg = performances.length > 0
+      ? parseFloat((performances.reduce((s, v) => s + v, 0) / performances.length).toFixed(2))
+      : 0;
+    setConfigForm(prev => ({ ...prev, currentRating: avg }));
+  }, [configForm.topNRatings, reviews, playerId]);
+
   useEffect(() => {
     // Check if this player has ever generated a plan (using localStorage)
     const hasPlanFlag = localStorage.getItem(`has-ai-plan-${playerId}`);
@@ -70,8 +90,8 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
         try {
           try {
             const plan = await getLatestAiPlanApi(playerId);
-            setCurrentPlan(plan);
-            setSelectedVersion(plan.version);
+            setCurrentPlan(plan ?? null);
+            setSelectedVersion(plan?.version ?? null);
           } catch {
             setCurrentPlan(null);
           }
@@ -116,8 +136,19 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
       return;
     }
 
-    if (configForm.hasInjury && !configForm.injuryDetails.trim()) {
-      toast.error('Please provide injury details when injury is marked as yes.');
+    if (configForm.topNRatings === '') {
+      toast.error('Please enter the number of top ratings to consider.');
+      return;
+    }
+    const topN = parseInt(configForm.topNRatings);
+    if (Number.isNaN(topN) || topN < 1 || topN > 5) {
+      toast.error('Top N Ratings must be between 1 and 5.');
+      return;
+    }
+
+    const targetRating = Number(configForm.targetRating);
+    if (configForm.targetRating !== '' && (Number.isNaN(targetRating) || targetRating < 0)) {
+      toast.error('Target rating must be a valid number.');
       return;
     }
 
@@ -125,13 +156,12 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
     try {
       const newPlan = await generateAiPlanApi(playerId, {
         skillType: configForm.skillType,
-        currentLevel: configForm.currentLevel,
-        targetLevel: configForm.targetLevel,
         durationWeeks: Number(configForm.durationWeeks),
         trainingDaysPerWeek: days,
         sessionDurationMinutes: Number(configForm.sessionDurationMinutes),
-        hasInjury: configForm.hasInjury,
-        injuryDetails: configForm.hasInjury ? configForm.injuryDetails.trim() : undefined
+        topNRatings: topN,
+        currentRating: configForm.currentRating,
+        targetRating: configForm.targetRating !== '' ? targetRating : undefined
       });
       // Mark that this player has a generated plan
       localStorage.setItem(`has-ai-plan-${playerId}`, 'true');
@@ -247,48 +277,16 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
             </div>
 
             <div>
-              <Label>Duration</Label>
-              <Select
-                value={configForm.durationWeeks}
-                onValueChange={v => setConfigForm(prev => ({ ...prev, durationWeeks: v }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2">2 weeks</SelectItem>
-                  <SelectItem value="4">4 weeks</SelectItem>
-                  <SelectItem value="8">8 weeks</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Current Level</Label>
-              <Select
-                value={configForm.currentLevel}
-                onValueChange={v => setConfigForm(prev => ({ ...prev, currentLevel: v as 'Beginner' | 'Intermediate' | 'Advanced' }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Beginner">Beginner</SelectItem>
-                  <SelectItem value="Intermediate">Intermediate</SelectItem>
-                  <SelectItem value="Advanced">Advanced</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Target Level</Label>
-              <Select
-                value={configForm.targetLevel}
-                onValueChange={v => setConfigForm(prev => ({ ...prev, targetLevel: v as 'Beginner' | 'Intermediate' | 'Advanced' }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Beginner">Beginner</SelectItem>
-                  <SelectItem value="Intermediate">Intermediate</SelectItem>
-                  <SelectItem value="Advanced">Advanced</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Duration (Weeks)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={configForm.durationWeeks}
+                  onChange={e => setConfigForm(prev => ({ ...prev, durationWeeks: e.target.value }))}
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">weeks</span>
+              </div>
             </div>
 
             <div>
@@ -303,40 +301,49 @@ export const AiPlanModule = ({ playerId }: AiPlanModuleProps) => {
             </div>
 
             <div>
-              <Label>Session Duration</Label>
-              <Select
+              <Label>Session Duration (mins)</Label>
+              <Input
+                type="number"
+                min={1}
                 value={configForm.sessionDurationMinutes}
-                onValueChange={v => setConfigForm(prev => ({ ...prev, sessionDurationMinutes: v }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="30">30 mins</SelectItem>
-                  <SelectItem value="45">45 mins</SelectItem>
-                  <SelectItem value="60">60 mins</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="col-span-2 flex items-center justify-between rounded-md border p-3">
-              <Label htmlFor="has-injury">Has Injury</Label>
-              <Switch
-                id="has-injury"
-                checked={configForm.hasInjury}
-                onCheckedChange={v => setConfigForm(prev => ({ ...prev, hasInjury: v }))}
+                onChange={e => setConfigForm(prev => ({ ...prev, sessionDurationMinutes: e.target.value }))}
               />
             </div>
 
-            {configForm.hasInjury && (
-              <div className="col-span-2">
-                <Label>Injury Details</Label>
-                <Textarea
-                  rows={3}
-                  value={configForm.injuryDetails}
-                  onChange={e => setConfigForm(prev => ({ ...prev, injuryDetails: e.target.value }))}
-                  placeholder="Describe injury type, area, and current recovery status"
-                />
-              </div>
-            )}
+            <div>
+              <Label>Last # Reviews</Label>
+              <Input
+                type="number"
+                min={1}
+                max={5}
+                value={configForm.topNRatings}
+                onChange={e => setConfigForm(prev => ({ ...prev, topNRatings: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground mt-1">Max 5. Averages top N overall ratings.</p>
+            </div>
+
+            <div>
+              <Label>Current Rating</Label>
+              <Input
+                type="number"
+                value={configForm.currentRating}
+                readOnly
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Calculated from top N ratings.</p>
+            </div>
+
+            <div className="col-span-2">
+              <Label>Target Rating</Label>
+              <Input
+                type="number"
+                min={0}
+                value={configForm.targetRating}
+                onChange={e => setConfigForm(prev => ({ ...prev, targetRating: e.target.value }))}
+                placeholder="Enter target rating"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 mt-4">
