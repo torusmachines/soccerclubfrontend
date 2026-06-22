@@ -263,9 +263,9 @@ const Players = () => {
                     <div className="flex gap-3">
                       <div className="w-20 h-20 rounded-md overflow-hidden bg-muted flex-shrink-0">
                         {(() => {
-                          const placeholder = 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png?_=20150327203541';
+                          const placeholder = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg';
                           const src = (player as any).playerProfileImage ?? (player as any).profileImage ?? (player as any).profile_image_url ?? placeholder;
-                          return <img src={src} alt={player.playerName} className="w-full h-full object-cover" />;
+                          return <img src={src} alt={player.playerName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = placeholder; }} />;
                         })()}
                       </div>
                       <div className="flex-1">
@@ -351,70 +351,70 @@ const Players = () => {
             </div>
           ) : (
             otherPlayers.map(player => (
-            <div
-              key={player.playerId}
-              className="text-left"
-              onClick={() => handleSelectPlayer(player.playerId)}
-            >
-              <Card className="hover:border-primary/30 transition-all cursor-pointer">
-                <CardContent className="p-4">
-                  <div className="flex gap-3">
-                    <div className="w-20 h-20 rounded-md overflow-hidden bg-muted flex-shrink-0">
-                      {(() => {
-                        const placeholder = 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png?_=20150327203541';
-                        const src = (player as any).playerProfileImage ?? (player as any).profileImage ?? (player as any).profile_image_url ?? placeholder;
-                        return <img src={src} alt={player.playerName} className="w-full h-full object-cover" />;
-                      })()}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-2 gap-2">
-                        <div>
-                          <h3 className="font-semibold">{player.playerName}</h3>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin size={10} /> {player.clubName || 'N/A'}</p>
+              <div
+                key={player.playerId}
+                className="text-left"
+                onClick={() => handleSelectPlayer(player.playerId)}
+              >
+                <Card className="hover:border-primary/30 transition-all cursor-pointer">
+                  <CardContent className="p-4">
+                    <div className="flex gap-3">
+                      <div className="w-20 h-20 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                        {(() => {
+                          const placeholder = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg';
+                          const src = (player as any).playerProfileImage ?? (player as any).profileImage ?? (player as any).profile_image_url ?? placeholder;
+                          return <img src={src} alt={player.playerName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = placeholder; }} />;
+                        })()}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div>
+                            <h3 className="font-semibold">{player.playerName}</h3>
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin size={10} /> {player.clubName || 'N/A'}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <ContractBadge status={player.agencyContractStatus as any} />
+                            {player.userStatus && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded ${player.userStatus === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                                {player.userStatus}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <ContractBadge status={player.agencyContractStatus as any} />
-                          {player.userStatus && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded ${player.userStatus === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                              {player.userStatus}
-                            </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium bg-secondary px-2 py-0.5 rounded">{player.position}</span>
+                            <span className="text-xs text-muted-foreground">{player.nationality}</span>
+                          </div>
+                          {player.overallRating > 0 && (
+                            <div className="flex items-center gap-1">
+                              <StarRating value={Math.round(player.overallRating)} readonly size={12} />
+                              <span className="text-xs font-medium">{player.overallRating.toFixed(1)}</span>
+                            </div>
                           )}
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium bg-secondary px-2 py-0.5 rounded">{player.position}</span>
-                          <span className="text-xs text-muted-foreground">{player.nationality}</span>
-                        </div>
-                        {player.overallRating > 0 && (
-                          <div className="flex items-center gap-1">
-                            <StarRating value={Math.round(player.overallRating)} readonly size={12} />
-                            <span className="text-xs font-medium">{player.overallRating.toFixed(1)}</span>
+                        {isAdmin && player.userStatus === 'Pending' && (
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            <Button
+                              size="sm"
+                              className="w-full bg-green-600 hover:bg-green-700 text-white"
+                              disabled={approvingPlayerId === player.playerId}
+                              onClick={(e) => handleApprovePlayer(player, e)}
+                            >
+                              {approvingPlayerId === player.playerId ? (
+                                <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Approving...</>
+                              ) : (
+                                'Approve'
+                              )}
+                            </Button>
                           </div>
                         )}
                       </div>
-                      {isAdmin && player.userStatus === 'Pending' && (
-                        <div className="mt-3 pt-3 border-t border-border/50">
-                          <Button
-                            size="sm"
-                            className="w-full bg-green-600 hover:bg-green-700 text-white"
-                            disabled={approvingPlayerId === player.playerId}
-                            onClick={(e) => handleApprovePlayer(player, e)}
-                          >
-                            {approvingPlayerId === player.playerId ? (
-                              <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Approving...</>
-                            ) : (
-                              'Approve'
-                            )}
-                          </Button>
-                        </div>
-                      )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ))) }
+                  </CardContent>
+                </Card>
+              </div>
+            )))}
         </div>
       </div>
 
@@ -804,11 +804,10 @@ const AddPlayerDialog: React.FC<AddPlayerDialogProps> = ({ onAdd }) => {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
+                className={`px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -824,8 +823,9 @@ const AddPlayerDialog: React.FC<AddPlayerDialogProps> = ({ onAdd }) => {
                 <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Player Image</p>
                 <div className="flex items-center gap-4">
                   <img
-                    src={form.profileImagePreview || 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'}
+                    src={form.profileImagePreview || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'}
                     className="w-14 h-14 rounded-lg object-cover bg-muted border border-border flex-shrink-0"
+                    onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }}
                   />
                   <Input
                     type="file"

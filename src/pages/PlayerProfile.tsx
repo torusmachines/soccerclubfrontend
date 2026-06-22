@@ -981,13 +981,14 @@ const PlayerProfile = () => {
         {/* Player Profile Image */}
         <div className="w-20 h-20 rounded-md overflow-hidden bg-muted flex-shrink-0">
           {(() => {
-            const placeholder = 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png';
+            const placeholder = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg';
             const src = player?.profileImage || (playerDetailsData?.profileImageUrl ?? playerDetailsData?.profile_image_url ?? playerDetailsData?.profileImage) || placeholder;
             return (
               <img
                 src={src}
                 alt={overviewData?.playerName || player?.fullName || 'Player'}
                 className="w-full h-full object-cover"
+                onError={(e) => { e.currentTarget.src = placeholder; }}
               />
             );
           })()}
@@ -1386,116 +1387,116 @@ const PlayerProfile = () => {
         </TabsContent>
 
         <TabsContent id="player-tab-reviews" value="reviews" className="mt-4 space-y-4">
-            {canManagePlayerCrud && (
-              <div className="flex justify-end">
-                <AddReviewDialog playerId={resolvedPlayerId} scouts={reviewScoutOptions} clubs={reviewClubOptions} onAdd={addReview} ratingActivities={playerRatingActivities} onSuccess={handleReviewAddedSuccess} />
-              </div>
-            )}
-            {playerReviews.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No reviews yet. Add a coaching review to get started.</p>
-            ) : (
-              <div className="space-y-4">
-                {playerReviews.map(review => {
-                  const scout = scouts.find(s => s.scoutId === review.scoutId);
-                  const scoutName = review.scoutName || scout?.scoutName || review.scoutId || 'Unknown Scout';
-                  const club1Name = review.club1Name || clubs.find(c => c.clubId === review.club1Id)?.clubName;
-                  const club2Name = review.club2Name || clubs.find(c => c.clubId === review.club2Id)?.clubName;
-                  return (
-                    <Card key={review.reviewId}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2 text-sm flex-wrap">
-                            <User size={14} className="text-muted-foreground" />
-                            <span className="font-medium">{scoutName}</span>
-                            <span className="text-muted-foreground">·</span>
-                            <Calendar size={14} className="text-muted-foreground" />
-                            <span className="text-muted-foreground">{review.matchDate ? format(new Date(review.matchDate), 'MMM d, yyyy') : 'N/A'}</span>
-                            {club1Name && club2Name && (
-                              <span className="text-xs text-muted-foreground">({club1Name} vs {club2Name})</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {
-                              (() => {
-                                const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
-                                const displayOverall = Number.isFinite(Number(review.averageRating))
-                                  ? Number(review.averageRating)
-                                  : calculateOverallAverage(reviewRatings);
-                                return (
-                                  <>
-                                    <StarRating value={Math.round(displayOverall)} readonly size={14} />
-                                    <span className="text-sm font-bold">{displayOverall.toFixed(1)}</span>
-                                  </>
-                                );
-                              })()
-                            }
-                          </div>
+          {canManagePlayerCrud && (
+            <div className="flex justify-end">
+              <AddReviewDialog playerId={resolvedPlayerId} scouts={reviewScoutOptions} clubs={reviewClubOptions} onAdd={addReview} ratingActivities={playerRatingActivities} onSuccess={handleReviewAddedSuccess} />
+            </div>
+          )}
+          {playerReviews.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No reviews yet. Add a coaching review to get started.</p>
+          ) : (
+            <div className="space-y-4">
+              {playerReviews.map(review => {
+                const scout = scouts.find(s => s.scoutId === review.scoutId);
+                const scoutName = review.scoutName || scout?.scoutName || review.scoutId || 'Unknown Scout';
+                const club1Name = review.club1Name || clubs.find(c => c.clubId === review.club1Id)?.clubName;
+                const club2Name = review.club2Name || clubs.find(c => c.clubId === review.club2Id)?.clubName;
+                return (
+                  <Card key={review.reviewId}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2 text-sm flex-wrap">
+                          <User size={14} className="text-muted-foreground" />
+                          <span className="font-medium">{scoutName}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <Calendar size={14} className="text-muted-foreground" />
+                          <span className="text-muted-foreground">{review.matchDate ? format(new Date(review.matchDate), 'MMM d, yyyy') : 'N/A'}</span>
+                          {club1Name && club2Name && (
+                            <span className="text-xs text-muted-foreground">({club1Name} vs {club2Name})</span>
+                          )}
                         </div>
-                        {
-                          (() => {
-                            const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
-                            const activityLookup = new Map<number, any>(
-                              (review.revRatingActivities ?? []).map(activity => [activity.activityId, activity])
-                            );
-                            const activityNameLookup = new Map<number, string>(
-                              (review.activities ?? []).map(activity => [activity.activityId, activity.activityName])
-                            );
+                        <div className="flex items-center gap-1">
+                          {
+                            (() => {
+                              const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
+                              const displayOverall = Number.isFinite(Number(review.averageRating))
+                                ? Number(review.averageRating)
+                                : calculateOverallAverage(reviewRatings);
+                              return (
+                                <>
+                                  <StarRating value={Math.round(displayOverall)} readonly size={14} />
+                                  <span className="text-sm font-bold">{displayOverall.toFixed(1)}</span>
+                                </>
+                              );
+                            })()
+                          }
+                        </div>
+                      </div>
+                      {
+                        (() => {
+                          const reviewRatings = review.revRatings ?? buildRatingsFromActivityRows(review, sportActivities);
+                          const activityLookup = new Map<number, any>(
+                            (review.revRatingActivities ?? []).map(activity => [activity.activityId, activity])
+                          );
+                          const activityNameLookup = new Map<number, string>(
+                            (review.activities ?? []).map(activity => [activity.activityId, activity.activityName])
+                          );
 
-                            return (
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {playerRatingCategories.map(cat => {
-                                  const activity = sportActivities.find(a => Number(a.sportId) === playerSportId && activityNameToKey(a.activityName) === cat.key);
-                                  const activityRating = activity ? activityLookup.get(activity.activityId ?? 0) : undefined;
-                                  const ratingValue = activityRating ? Number(activityRating.rating) : ((reviewRatings as any)[cat.key] ?? 0);
-                                  const label = activity && activity.activityId !== undefined
-                                    ? (activityNameLookup.get(activity.activityId) || cat.label)
-                                    : cat.label;
+                          return (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {playerRatingCategories.map(cat => {
+                                const activity = sportActivities.find(a => Number(a.sportId) === playerSportId && activityNameToKey(a.activityName) === cat.key);
+                                const activityRating = activity ? activityLookup.get(activity.activityId ?? 0) : undefined;
+                                const ratingValue = activityRating ? Number(activityRating.rating) : ((reviewRatings as any)[cat.key] ?? 0);
+                                const label = activity && activity.activityId !== undefined
+                                  ? (activityNameLookup.get(activity.activityId) || cat.label)
+                                  : cat.label;
 
-                                  return (
-                                    <div key={cat.key}>
-                                      <div className="flex items-center justify-between text-xs">
-                                        <span className="text-muted-foreground">{label}</span>
-                                        <StarRating value={ratingValue} readonly size={10} />
-                                      </div>
-                                      {activityRating?.comment && (
-                                        <p className="text-[10px] text-muted-foreground mt-0.5 italic">{activityRating.comment}</p>
-                                      )}
-                                      {activityRating?.ratingFollowupDate && (
-                                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                                          Follow-up: {format(new Date(activityRating.ratingFollowupDate), 'MMM d, yyyy')}
-                                        </p>
-                                      )}
+                                return (
+                                  <div key={cat.key}>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="text-muted-foreground">{label}</span>
+                                      <StarRating value={ratingValue} readonly size={10} />
                                     </div>
-                                  );
-                                })}
+                                    {activityRating?.comment && (
+                                      <p className="text-[10px] text-muted-foreground mt-0.5 italic">{activityRating.comment}</p>
+                                    )}
+                                    {activityRating?.ratingFollowupDate && (
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        Follow-up: {format(new Date(activityRating.ratingFollowupDate), 'MMM d, yyyy')}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()
+                      }
+                      {playerRatingCategories.length === 0 && (review.activities?.length ?? 0) > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                          {(review.activities ?? []).map(activity => (
+                            <div key={`${review.reviewId}-${activity.activityId}`}>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">{activity.activityName}</span>
+                                <StarRating value={Math.round(Number(activity.rating || 0))} readonly size={10} />
                               </div>
-                            );
-                          })()
-                        }
-                        {playerRatingCategories.length === 0 && (review.activities?.length ?? 0) > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-                            {(review.activities ?? []).map(activity => (
-                              <div key={`${review.reviewId}-${activity.activityId}`}>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-muted-foreground">{activity.activityName}</span>
-                                  <StarRating value={Math.round(Number(activity.rating || 0))} readonly size={10} />
-                                </div>
-                                {activity.comment && (
-                                  <p className="text-[10px] text-muted-foreground mt-0.5 italic">{activity.comment}</p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {review.notes && <p className="text-sm text-muted-foreground mt-3 italic">"{review.notes}"</p>}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-        
+                              {activity.comment && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5 italic">{activity.comment}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {review.notes && <p className="text-sm text-muted-foreground mt-3 italic">"{review.notes}"</p>}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
 
         {(!isPlayer || visiblePlayerNoteCounts.private > 0) && (
           <TabsContent id="player-tab-private" value="private" className="mt-4">
@@ -2300,8 +2301,9 @@ const EditPlayerForm = ({
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Player Image</p>
             <div className="flex items-center gap-4">
               <img
-                src={form.profileImage || 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'}
+                src={form.profileImage || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'}
                 className="w-14 h-14 rounded-lg object-cover bg-muted border border-border flex-shrink-0"
+                onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }}
               />
               <Input
                 type="file"

@@ -68,9 +68,7 @@ const Clubs = () => {
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-14 h-14 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
-                      {club.logoUrl
-                        ? <img src={club.logoUrl} alt={club.clubName} className="w-full h-full object-cover" />
-                        : <Building2 size={18} className="text-primary" />}
+                      <img src={club.logoUrl || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'} alt={club.clubName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold truncate">{club.clubName}</h3>
@@ -150,9 +148,7 @@ const AddClubDialog = ({ onAdd }: { onAdd: (c: Club, logoFile?: File | null) => 
             <Label>Club Logo</Label>
             <div className="flex items-center gap-3 mt-1">
               <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                {logoPreview
-                  ? <img src={logoPreview} alt="Logo preview" className="w-full h-full object-cover" />
-                  : <Building2 size={20} className="text-muted-foreground" />}
+                <img src={logoPreview || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'} alt="Logo preview" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }} />
               </div>
               <Input
                 type="file"

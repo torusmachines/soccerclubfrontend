@@ -318,9 +318,7 @@ const ClubProfile = () => {
         <div className="flex-1 min-w-0">
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-              {club.logoUrl
-                ? <img src={club.logoUrl} alt={club.clubName} className="w-full h-full object-cover" />
-                : <Building2 size={24} className="text-primary" />}
+              <img src={club.logoUrl || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'} alt={club.clubName} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }} />
             </div>
 
             <div className="flex-1 min-w-0">
@@ -461,7 +459,7 @@ const ClubProfile = () => {
           />
         </TabsContent>
 
-        <NoteViewDialog noteId={noteIdParam || undefined} note={noteIdParam ? ((apiClubNotesSource||[]).concat(notes)).find(n => String(n.noteId) === String(noteIdParam)) : undefined} open={openNoteModal} onOpenChange={(v) => {
+        <NoteViewDialog noteId={noteIdParam || undefined} note={noteIdParam ? ((apiClubNotesSource || []).concat(notes)).find(n => String(n.noteId) === String(noteIdParam)) : undefined} open={openNoteModal} onOpenChange={(v) => {
           setOpenNoteModal(v);
           if (!v) {
             const next = new URLSearchParams(searchParams);
@@ -845,9 +843,7 @@ const UpdateClubDialog = ({ club }: { club: Club }) => {
             <Label className="text-sm">Club Logo</Label>
             <div className="flex items-center gap-2 md:gap-3 mt-1">
               <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                {logoPreview
-                  ? <img src={logoPreview} alt="Logo preview" className="w-full h-full object-cover" />
-                  : <Building2 size={20} className="text-muted-foreground" />}
+                <img src={logoPreview || 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'} alt="Logo preview" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://static.vecteezy.com/system/resources/thumbnails/078/424/696/small/simple-flat-silhouette-user-profile-account-contact-symbol-icon-vector.jpg'; }} />
               </div>
               <Input
                 type="file"
