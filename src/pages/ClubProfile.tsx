@@ -310,7 +310,7 @@ const ClubProfile = () => {
       </div>
     );
   }
-
+  //new
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in px-3 md:px-0">
       <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
